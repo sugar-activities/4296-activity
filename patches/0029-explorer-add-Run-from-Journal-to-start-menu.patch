@@ -1,0 +1,59 @@
+From 2b5e5b08101bec5f7ecf030f4651fa8acf7f4203 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Wed, 5 Nov 2008 13:36:35 -0600
+Subject: [PATCH] explorer: add "Run from Journal" to start menu
+
+---
+ programs/explorer/startmenu.c |   15 +++++++++++++++
+ 1 files changed, 15 insertions(+), 0 deletions(-)
+
+diff --git a/programs/explorer/startmenu.c b/programs/explorer/startmenu.c
+index a9d6a05..0780f7b 100644
+--- a/programs/explorer/startmenu.c
++++ b/programs/explorer/startmenu.c
+@@ -16,6 +16,9 @@
+  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+  */
+ 
++#include "config.h"
++#include "wine/port.h"
++
+ #define UNICODE
+ #define COBJMACROS
+ #define INITGUID
+@@ -413,6 +416,13 @@ static void run_dialog()
+     FreeLibrary(hShell32);
+ }
+ 
++static void run_from_journal()
++{
++    static const char *argv[] = { "sugar-run-from-journal", NULL };
++
++    spawnvp(_P_NOWAITO, argv[0], argv);
++}
++
+ static void destroy_menus()
+ {
+     if (!topmenu)
+@@ -530,6 +540,7 @@ void do_startmenu(HWND hwnd, HWND button)
+     TPMPARAMS tpm;
+     static WCHAR Exit[] = {'E','x','i','t',0};
+     static WCHAR Run[] = {'R','u','n','.','.','.',0};
++    static WCHAR RunFromJournal[] = {'R','u','n',' ','f','r','o','m',' ','J','o','u','r','n','a','l','.','.','.',0};
+     LPWSTR exit_str, run_str;
+ 
+     /* FIXME: Our existing menu is never destroyed if the user makes no 
+@@ -577,6 +588,10 @@ void do_startmenu(HWND hwnd, HWND button)
+     strcpyW(run_str, Run);
+     add_special_item(NULL, NULL, run_str, run_dialog, NULL, hwnd);
+     
++    run_str = HeapAlloc(GetProcessHeap(), 0, sizeof(WCHAR) * (strlenW(RunFromJournal)+1));
++    strcpyW(run_str, RunFromJournal);
++    add_special_item(NULL, NULL, run_str, run_from_journal, NULL, hwnd);
++    
+     /* separator */
+     AppendMenuW(topmenu, MF_SEPARATOR, 0, NULL);
+     
+-- 
+1.5.6.5
+

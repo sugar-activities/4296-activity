@@ -1,0 +1,37 @@
+From 775304635b1b323f77f1e395da1be228b2daebbd Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Wed, 27 Aug 2008 13:01:39 -0500
+Subject: [PATCH] tasklist: use WM_SYSCOMMAND instead of ShowWindow
+
+---
+ programs/explorer/tasklist.c |    9 +++------
+ 1 files changed, 3 insertions(+), 6 deletions(-)
+
+diff --git a/programs/explorer/tasklist.c b/programs/explorer/tasklist.c
+index 3aca53b..802345a 100644
+--- a/programs/explorer/tasklist.c
++++ b/programs/explorer/tasklist.c
+@@ -252,17 +252,14 @@ static void handle_click(int index)
+ 
+     if (hwnd == foreground && !(style & WS_MINIMIZE))
+     {
+-        ShowWindow(hwnd, SW_SHOWMINNOACTIVE); /* MSDN suggests that SW_FORCEMINIMIZE is
+-            more appropriate, but it seems to make them vanish on Windows.. */
++        PostMessageW(hwnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+         foreground_changed(0);
+     }
+     else
+     {
+         SetForegroundWindow(hwnd);
+-        if (style & WS_MAXIMIZE)
+-            ShowWindow(hwnd, SW_SHOWMAXIMIZED);
+-        else
+-            ShowWindow(hwnd, SW_SHOWNORMAL);
++        if (style & WS_MINIMIZE)
++            PostMessageW(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
+         foreground_changed(hwnd);
+     }
+ }
+-- 
+1.5.6.5
+

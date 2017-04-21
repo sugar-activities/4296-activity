@@ -1,0 +1,92 @@
+From 2baa460847223d46e7380ad492459d0e52f07f41 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Wed, 8 Oct 2008 15:43:46 -0500
+Subject: [PATCH] do not rely on a consistent user id
+
+Sugar has a security system called Rainbow that picks a different user
+id for every instance of an activity. It does choose a consistent group
+id.
+---
+ dlls/ntdll/server.c |    6 +++++-
+ libs/wine/config.c  |    2 +-
+ server/request.c    |    8 +++++---
+ 3 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/ntdll/server.c b/dlls/ntdll/server.c
+index 1eea402..136e108 100644
+--- a/dlls/ntdll/server.c
++++ b/dlls/ntdll/server.c
+@@ -736,6 +736,7 @@ static void setup_config_dir(void)
+     {
+         if (errno != ENOENT) fatal_perror( "chdir to %s\n", config_dir );
+ 
++#if 0 /* check disabled because of rainbow */
+         if ((p = strrchr( config_dir, '/' )) && p != config_dir)
+         {
+             struct stat st;
+@@ -749,6 +750,7 @@ static void setup_config_dir(void)
+                              tmp_dir );
+             free( tmp_dir );
+         }
++#endif
+ 
+         mkdir( config_dir, 0777 );
+         if (chdir( config_dir ) == -1) fatal_perror( "chdir to %s\n", config_dir );
+@@ -832,8 +834,10 @@ static int server_connect(void)
+ 
+     /* make sure we are at the right place */
+     if (stat( ".", &st ) == -1) fatal_perror( "stat %s", serverdir );
++#if 0 /* check disabled because of rainbow */
+     if (st.st_uid != getuid()) fatal_error( "'%s' is not owned by you\n", serverdir );
+-    if (st.st_mode & 077) fatal_error( "'%s' must not be accessible by other users\n", serverdir );
++#endif
++    if (st.st_mode & 07) fatal_error( "'%s' must not be accessible by other users\n", serverdir );
+ 
+     for (retry = 0; retry < 6; retry++)
+     {
+diff --git a/libs/wine/config.c b/libs/wine/config.c
+index 280241c..26dcc1a 100644
+--- a/libs/wine/config.c
++++ b/libs/wine/config.c
+@@ -228,7 +228,7 @@ static void init_paths(void)
+         }
+     }
+     if (!S_ISDIR(st.st_mode)) fatal_error( "%s is not a directory\n", config_dir );
+-#ifdef HAVE_GETUID
++#if 0 /* check disabled because of rainbow */
+     if (st.st_uid != getuid()) fatal_error( "%s is not owned by you\n", config_dir );
+ #endif
+ 
+diff --git a/server/request.c b/server/request.c
+index d2aebb3..e03f47b 100644
+--- a/server/request.c
++++ b/server/request.c
+@@ -527,12 +527,14 @@ static void create_dir( const char *name, struct stat *st )
+     if (lstat( name, st ) == -1)
+     {
+         if (errno != ENOENT) fatal_perror( "lstat %s", name );
+-        if (mkdir( name, 0700 ) == -1 && errno != EEXIST) fatal_perror( "mkdir %s", name );
++        if (mkdir( name, 0770 ) == -1 && errno != EEXIST) fatal_perror( "mkdir %s", name );
+         if (lstat( name, st ) == -1) fatal_perror( "lstat %s", name );
+     }
+     if (!S_ISDIR(st->st_mode)) fatal_error( "%s is not a directory\n", name );
++#if 0 /* check disabled because of rainbow */
+     if (st->st_uid != getuid()) fatal_error( "%s is not owned by you\n", name );
+-    if (st->st_mode & 077) fatal_error( "%s must not be accessible by other users\n", name );
++#endif
++    if (st->st_mode & 07) fatal_error( "%s must not be accessible by other users\n", name );
+ }
+ 
+ /* create the server directory and chdir to it */
+@@ -580,7 +582,7 @@ static int create_server_lock(void)
+             fatal_error( "%s/%s is not a regular file\n", wine_get_server_dir(), server_lock_name );
+     }
+ 
+-    if ((fd = open( server_lock_name, O_CREAT|O_TRUNC|O_WRONLY, 0600 )) == -1)
++    if ((fd = open( server_lock_name, O_CREAT|O_TRUNC|O_WRONLY, 0660 )) == -1)
+         fatal_perror( "error creating %s/%s", wine_get_server_dir(), server_lock_name );
+     return fd;
+ }
+-- 
+1.5.6.5
+

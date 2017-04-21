@@ -1,0 +1,793 @@
+From 25e419375278a88aa1365427101c33734d029d9e Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Thu, 14 Aug 2008 13:38:48 -0500
+Subject: [PATCH] explorer: add a start menu to the taskbar
+
+---
+ programs/explorer/Makefile.in        |    3 +-
+ programs/explorer/explorer.c         |    8 +
+ programs/explorer/explorer_private.h |    2 +
+ programs/explorer/startmenu.c        |  527 ++++++++++++++++++++++++++++++++++
+ programs/explorer/taskbar.c          |   85 ++++--
+ 5 files changed, 597 insertions(+), 28 deletions(-)
+ create mode 100644 programs/explorer/startmenu.c
+
+diff --git a/programs/explorer/Makefile.in b/programs/explorer/Makefile.in
+index e9286af..f2fc10a 100644
+--- a/programs/explorer/Makefile.in
++++ b/programs/explorer/Makefile.in
+@@ -6,12 +6,13 @@ VPATH     = @srcdir@
+ MODULE    = explorer.exe
+ APPMODE   = -mwindows -municode
+ IMPORTS   = rpcrt4 user32 gdi32 advapi32 kernel32 ntdll
+-DELAYIMPORTS = comctl32
++DELAYIMPORTS = comctl32 shell32 ole32 shlwapi
+ 
+ C_SRCS = \
+ 	appbar.c \
+ 	desktop.c \
+ 	explorer.c \
++	startmenu.c \
+ 	systray.c \
+ 	taskbar.c
+ 
+diff --git a/programs/explorer/explorer.c b/programs/explorer/explorer.c
+index c8c3ea0..e31681a 100644
+--- a/programs/explorer/explorer.c
++++ b/programs/explorer/explorer.c
+@@ -93,6 +93,7 @@ static void ParseCommandLine(LPWSTR commandline,parameters_struct *parameters)
+     static const WCHAR arg_root[] = {'/','r','o','o','t',','};
+     static const WCHAR arg_select[] = {'/','s','e','l','e','c','t',','};
+     static const WCHAR arg_desktop[] = {'/','d','e','s','k','t','o','p'};
++    static const WCHAR arg_taskbar[] = {'/','t','a','s','k','b','a','r'};
+ 
+     LPWSTR p, p2;
+ 
+@@ -128,6 +129,13 @@ static void ParseCommandLine(LPWSTR commandline,parameters_struct *parameters)
+             p += sizeof(arg_desktop)/sizeof(WCHAR);
+             manage_desktop( p );  /* the rest of the command line is handled by desktop mode */
+         }
++        else if (strncmpW(p, arg_taskbar, sizeof(arg_taskbar)/sizeof(WCHAR))==0)
++        {
++            MSG msg;
++            initialize_taskbar();
++            while (GetMessageW( &msg, 0, 0, 0 )) DispatchMessageW( &msg );
++            ExitProcess(0);
++        }
+         else p++;
+ 
+         p2 = p;
+diff --git a/programs/explorer/explorer_private.h b/programs/explorer/explorer_private.h
+index a20bf80..22bc009 100644
+--- a/programs/explorer/explorer_private.h
++++ b/programs/explorer/explorer_private.h
+@@ -25,5 +25,7 @@ extern void manage_desktop( WCHAR *arg );
+ extern HWND initialize_systray(HWND parent);
+ extern void initialize_taskbar(void);
+ extern void initialize_appbar(void);
++extern void do_startmenu(HWND hwnd, HWND button);
++extern LRESULT handle_menu(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
+ 
+ #endif  /* __WINE_EXPLORER_PRIVATE_H */
+diff --git a/programs/explorer/startmenu.c b/programs/explorer/startmenu.c
+new file mode 100644
+index 0000000..f2a0b28
+--- /dev/null
++++ b/programs/explorer/startmenu.c
+@@ -0,0 +1,527 @@
++/*
++ * Copyright (C) 2008 Vincent Povirk
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#define UNICODE
++#define COBJMACROS
++#define INITGUID
++#include <windows.h>
++#include <shellapi.h>
++#include <shlguid.h>
++#include <shlobj.h>
++#include <shlwapi.h>
++#include <shobjidl.h>
++#include "wine/debug.h"
++#include "wine/list.h"
++#include "explorer_private.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(explorer);
++
++struct menu_item
++{
++    struct list entry;
++    BOOL initialized;
++    LPWSTR displayname;
++    HICON icon;
++
++    /* parent information */
++    struct menu_item* parent; /* NULL for paths that don't have a parent menu */
++    LPITEMIDLIST pidl; /* relative to parent; absolute if parent is NULL */
++
++    /* folder information */
++    IShellFolder* folder;
++    struct menu_item* overlay;
++    HMENU menuhandle;
++};
++
++static struct list items = LIST_INIT(items);
++
++static HMENU topmenu;
++
++static ULONG copy_pidls(struct menu_item* item, LPITEMIDLIST dest)
++{
++    ULONG item_size;
++    ULONG bytes_copied = 0;
++        
++    if (item->parent)
++    {
++        bytes_copied = copy_pidls(item->parent, dest);
++    }
++    
++    item_size = ILGetSize(item->pidl);
++    
++    CopyMemory((((char*)dest)+bytes_copied), item->pidl, item_size);
++    
++    return bytes_copied + item_size - 2;
++}
++
++static LPITEMIDLIST build_pidl(struct menu_item* item)
++{
++    ULONG length=0;
++    struct menu_item* i;
++    LPITEMIDLIST result;
++    
++    for (i=item; i != NULL; i=i->parent)
++    {
++        length = length + ILGetSize(i->pidl) - 2;
++    }
++    length = length + 2;
++    
++    result = CoTaskMemAlloc(length);
++    
++    if (copy_pidls(item, result)+2 > length)
++    {
++        /* we just trashed memory; this will not end well */
++        WINE_ERR("buffer was too small\n");
++        return NULL;
++    }
++    
++    return result;
++}
++
++static void exec_item(struct menu_item* item)
++{
++    LPITEMIDLIST abs_pidl;
++    SHELLEXECUTEINFOW sei;
++    
++    abs_pidl = build_pidl(item);
++    
++    ZeroMemory(&sei, sizeof(sei));
++    sei.cbSize = sizeof(sei);
++    sei.fMask = SEE_MASK_IDLIST|SEE_MASK_NO_CONSOLE;
++    sei.nShow = SW_SHOWNORMAL;
++    sei.lpIDList = abs_pidl;
++    
++    ShellExecuteExW(&sei);
++    
++    CoTaskMemFree(abs_pidl);
++}
++
++static HICON extract_icon(IShellFolder* parent, LPCITEMIDLIST pidl, HWND hwnd)
++{
++    HICON icon = NULL;
++    int width, height;
++    IExtractIconW* extracticon;
++    WCHAR iconfile[MAX_PATH]={0};
++    int iconindex;
++    UINT iconflags;
++    
++    width = GetSystemMetrics(SM_CXSMICON);
++    height = GetSystemMetrics(SM_CYSMICON);
++    
++    if (SUCCEEDED(IShellFolder_GetUIObjectOf(parent, 0, 1, &pidl, &IID_IExtractIconW, NULL, (void**)&extracticon)))
++    {
++        HRESULT ret;
++        ret = IExtractIconW_GetIconLocation(extracticon, 0, iconfile, sizeof(iconfile)/sizeof(WCHAR), &iconindex, &iconflags);
++        
++        if (ret == S_OK)
++        {
++            IExtractIconW_Extract(extracticon, iconfile, iconindex, NULL, &icon, MAKELONG(0,width));
++        }
++        
++        IExtractIconW_Release(extracticon);
++    }
++    
++    if (icon == NULL)
++        icon = LoadImageW(NULL, (LPCWSTR)IDI_WINLOGO, IMAGE_ICON, width, height, LR_DEFAULTCOLOR);
++    
++    return icon;
++}
++
++/* add an individual file or folder to the menu */
++static struct menu_item* add_item(struct menu_item* parent, struct menu_item* user_parent, LPITEMIDLIST pidl, HWND hwnd)
++{
++    struct menu_item* item;
++    STRRET strret;
++    MENUITEMINFOW mii;
++    HMENU parent_menu;
++    int existing_item_count, i;
++    BOOL match = FALSE;
++
++    item = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(struct menu_item));
++
++    if (parent == NULL)
++    {
++        IShellFolder* parent_folder;
++        LPCITEMIDLIST relative_pidl;
++        SFGAOF flags;
++        
++        SHBindToParent(pidl, &IID_IShellFolder, (void *)&parent_folder, &relative_pidl);
++        
++        IShellFolder_GetDisplayNameOf(parent_folder, relative_pidl, SHGDN_INFOLDER, &strret);
++        StrRetToStrW(&strret, NULL, &item->displayname);
++        
++        item->icon = extract_icon(parent_folder, relative_pidl, hwnd);
++        
++        flags = SFGAO_FOLDER;
++        IShellFolder_GetAttributesOf(parent_folder, 1, &relative_pidl, &flags);
++        
++        if (flags & SFGAO_FOLDER)
++            IShellFolder_BindToObject(parent_folder, relative_pidl, NULL, &IID_IShellFolder, (void *)&item->folder);
++        
++        IShellFolder_Release(parent_folder);
++    }
++    else
++    {
++        SFGAOF flags;
++        
++        IShellFolder_GetDisplayNameOf(parent->folder, pidl, SHGDN_INFOLDER, &strret);
++        StrRetToStrW(&strret, NULL, &item->displayname);
++        
++        item->icon = extract_icon(parent->folder, pidl, hwnd);
++        
++        flags = SFGAO_FOLDER;
++        IShellFolder_GetAttributesOf(parent->folder, 1, (LPCITEMIDLIST*)&pidl, &flags);
++        
++        if (flags & SFGAO_FOLDER)
++            IShellFolder_BindToObject(parent->folder, pidl, NULL, &IID_IShellFolder, (void *)&item->folder);
++    }
++
++    if (user_parent)
++    {
++        parent_menu = user_parent->menuhandle;
++    }
++    else if (parent)
++    {
++        parent_menu = parent->menuhandle;
++    }
++    else
++    {
++        parent_menu = topmenu;
++    }
++
++    item->parent = parent;
++    item->pidl = pidl;
++    
++    /* search for an existing menu item with this name or the spot to insert this item */
++    existing_item_count = GetMenuItemCount(parent_menu);
++    mii.cbSize = sizeof(mii);
++    mii.fMask = MIIM_SUBMENU|MIIM_DATA;
++    for (i=0; i<existing_item_count; i++)
++    {
++        struct menu_item* existing_item;
++        int cmp;
++        
++        GetMenuItemInfoW(parent_menu, i, TRUE, &mii);
++        existing_item = ((struct menu_item*)mii.dwItemData);
++        
++        if (!existing_item)
++            continue;
++        
++        /* group by parent */
++        if (!existing_item->parent || (existing_item->parent != parent && existing_item->parent != user_parent))
++            continue;
++        
++        /* folders before files */
++        if (existing_item->folder && !item->folder)
++            continue;
++        if (!existing_item->folder && item->folder)
++            break;
++        
++        cmp = CompareStringW(LOCALE_USER_DEFAULT, NORM_IGNORECASE, item->displayname, -1, existing_item->displayname, -1);
++        
++        if (cmp == CSTR_LESS_THAN)
++            break;
++        
++        if (cmp == CSTR_EQUAL)
++        {
++            match = TRUE;
++            break;
++        }
++    }
++    
++    if (!match)
++    {
++        /* no existing item with the same name; just add it */
++        mii.fMask = MIIM_STRING|MIIM_DATA;
++        mii.dwTypeData = item->displayname;
++        mii.dwItemData = (DWORD)item;
++        
++        if (item->folder)
++        {
++            MENUINFO mi;
++            item->menuhandle = CreatePopupMenu();
++            mii.fMask |= MIIM_SUBMENU;
++            mii.hSubMenu = item->menuhandle;
++
++            mi.cbSize = sizeof(mi);
++            mi.fMask = MIM_MENUDATA|MIM_STYLE;
++            mi.dwMenuData = (ULONG_PTR)item;
++            mi.dwStyle = MNS_CHECKORBMP; /* FIXME: this style is ugly in Wine */
++            SetMenuInfo(item->menuhandle, &mi);
++        }
++        
++        if (item->icon)
++        {
++            mii.fMask |= MIIM_BITMAP;
++            mii.hbmpItem = HBMMENU_CALLBACK;
++        }
++        
++        InsertMenuItemW(parent?parent->menuhandle:topmenu, i, TRUE, &mii);
++        
++        list_add_tail(&items, &item->entry);
++    }
++    else if (item->folder && mii.hSubMenu)
++    {
++        /* there is an existing folder with the same name; create an overlay */
++        MENUINFO mi;
++        
++        item->overlay = (struct menu_item*)mii.dwItemData;
++        item->menuhandle = item->overlay->menuhandle;
++
++        mii.dwItemData = (ULONG_PTR)item;
++        SetMenuItemInfoW(parent_menu, i, TRUE, &mii);
++
++        mi.cbSize = sizeof(mi);
++        mi.fMask = MIM_MENUDATA;
++        mi.dwMenuData = (ULONG_PTR)item;
++        SetMenuInfo(item->menuhandle, &mi);
++
++        list_add_tail(&items, &item->entry);
++    }
++    else {
++        /* the existing item or this one is a normal file; do nothing */
++        if (item->folder)
++            IShellFolder_Release(item->folder);
++        if (item->icon)
++            DestroyIcon(item->icon);
++        HeapFree(GetProcessHeap(), 0, item->displayname);
++        HeapFree(GetProcessHeap(), 0, item);
++        item = NULL;
++    }
++    
++    return item;
++}
++
++/* add a set of files or folders to the menu */
++static struct menu_item* add_items(struct menu_item* parent, struct menu_item* user_parent, LPITEMIDLIST pidl, HWND hwnd)
++{
++    IEnumIDList* enumidl;
++    
++    if (parent == NULL)
++    {
++        IShellFolder* desktop;
++        
++        parent = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(struct menu_item));
++        
++        SHGetDesktopFolder(&desktop);
++        IShellFolder_BindToObject(desktop, pidl, NULL, &IID_IShellFolder, (void *)&parent->folder);
++        
++        parent->pidl = pidl;
++        parent->menuhandle = user_parent?user_parent->menuhandle:topmenu;
++        list_add_tail(&items, &parent->entry);
++        
++        IShellFolder_Release(desktop);
++    }
++
++    if (IShellFolder_EnumObjects(parent->folder, NULL,
++        SHCONTF_FOLDERS, &enumidl) == S_OK)
++    {
++        LPITEMIDLIST rel_pidl=NULL;
++        while (S_OK == IEnumIDList_Next(enumidl, 1, &rel_pidl, NULL))
++        {
++            add_item(parent, user_parent, rel_pidl, hwnd);
++        }
++        
++        IEnumIDList_Release(enumidl);
++    }
++    
++    if (IShellFolder_EnumObjects(parent->folder, NULL,
++        SHCONTF_NONFOLDERS, &enumidl) == S_OK)
++    {
++        LPITEMIDLIST rel_pidl=NULL;
++        while (S_OK == IEnumIDList_Next(enumidl, 1, &rel_pidl, NULL))
++        {
++            add_item(parent, user_parent, rel_pidl, hwnd);
++        }
++        
++        IEnumIDList_Release(enumidl);
++    }
++    
++    return parent;
++}
++
++static void destroy_menus()
++{
++    if (!topmenu)
++        return;
++    
++    WINE_TRACE("destroying start menu\n");
++    
++    if (!DestroyMenu(topmenu))
++    {
++        WINE_ERR("couldn't destroy menu\n");
++    }
++    topmenu = NULL;
++    
++    while (!list_empty(&items))
++    {
++        struct menu_item* item;
++        
++        item = LIST_ENTRY(list_head(&items), struct menu_item, entry);
++        
++        if (item->folder)
++            IShellFolder_Release(item->folder);
++
++        if (item->icon)
++            DestroyIcon(item->icon);
++        
++        CoTaskMemFree(item->pidl);
++        CoTaskMemFree(item->displayname);
++        
++        list_remove(&item->entry);
++        HeapFree(GetProcessHeap(), 0, item);
++    }
++}
++
++static void fill_menu(struct menu_item* item, HWND hwnd)
++{
++    if (!item->initialized)
++    {
++        if (item->overlay)
++        {
++            fill_menu(item->overlay, hwnd);
++        }
++        
++        add_items(item, item->overlay, item->pidl, hwnd);
++        
++        item->initialized = TRUE;
++    }
++}
++
++LRESULT handle_menu(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
++{
++    switch (msg)
++    {
++    case WM_INITMENUPOPUP:
++        if ((HMENU)wparam != topmenu)
++        {
++            HMENU hmenu = (HMENU)wparam;
++            struct menu_item* item;
++            MENUINFO mi;
++            
++            mi.cbSize = sizeof(mi);
++            mi.fMask = MIM_MENUDATA;
++            GetMenuInfo(hmenu, &mi);
++            item = (struct menu_item*)mi.dwMenuData;
++            
++            fill_menu(item, hwnd);
++            return 0;
++        }
++        break;
++
++    case WM_MENUCOMMAND:
++        {
++            HMENU hmenu = (HMENU)lparam;
++            struct menu_item* item;
++            MENUITEMINFOW mii;
++            
++            mii.cbSize = sizeof(mii);
++            mii.fMask = MIIM_DATA;
++            GetMenuItemInfoW(hmenu, wparam, TRUE, &mii);
++            item = (struct menu_item*)mii.dwItemData;
++            
++            exec_item(item);
++            
++            destroy_menus();
++            
++            return 0;
++        }
++    
++    case WM_MEASUREITEM:
++        {
++            MEASUREITEMSTRUCT* mis = (MEASUREITEMSTRUCT*)lparam;
++            /* struct menu_item* item = (struct menu_item*)mis->itemData; */
++            
++            mis->itemWidth = GetSystemMetrics(SM_CXSMICON);
++            mis->itemHeight = GetSystemMetrics(SM_CYSMICON);
++            return TRUE;
++        }
++    
++    case WM_DRAWITEM:
++        {
++            DRAWITEMSTRUCT* dis = (DRAWITEMSTRUCT*)lparam;
++            struct menu_item* item = (struct menu_item*)dis->itemData;
++            
++            DrawIconEx(dis->hDC, dis->rcItem.left, dis->rcItem.top, item->icon, dis->rcItem.right - dis->rcItem.left, dis->rcItem.bottom - dis->rcItem.top, 0, NULL, DI_NORMAL);
++        }
++    }
++    
++    return DefWindowProcW(hwnd, msg, wparam, lparam);
++}
++
++void do_startmenu(HWND hwnd, HWND button)
++{
++    LPITEMIDLIST pidl;
++    MENUINFO mi;
++    RECT rc={0,0,0,0};
++    TPMPARAMS tpm;
++
++    /* FIXME: Our existing menu is never destroyed if the user makes no 
++        selection. It seems to be impossible to detect this situation. */
++    destroy_menus();
++
++    WINE_TRACE("creating start menu\n");
++    
++    topmenu = CreatePopupMenu();
++    if (!topmenu)
++    {
++        WINE_ERR("couldn't create menu\n");
++        return;
++    }
++    
++    if (SUCCEEDED(SHGetSpecialFolderLocation(NULL, CSIDL_STARTMENU, &pidl)))
++    {
++        struct menu_item* item = add_items(NULL, NULL, pidl, hwnd);
++        
++        if (SUCCEEDED(SHGetSpecialFolderLocation(NULL, CSIDL_COMMON_STARTMENU, &pidl)))
++        {
++            add_items(NULL, item, pidl, hwnd);
++        }
++    }
++    
++    /* separator */
++    AppendMenuW(topmenu, MF_SEPARATOR, 0, NULL);
++    
++    if (SUCCEEDED(SHGetSpecialFolderLocation(NULL, CSIDL_RECENT, &pidl)))
++    {
++        add_item(NULL, NULL, pidl, hwnd);
++    }
++    
++    if (SUCCEEDED(SHGetSpecialFolderLocation(NULL, CSIDL_CONTROLS, &pidl)))
++    {
++        add_item(NULL, NULL, pidl, hwnd);
++    }
++    
++    mi.cbSize = sizeof(mi);
++    mi.fMask = MIM_STYLE;
++    mi.dwStyle = MNS_NOTIFYBYPOS|MNS_CHECKORBMP;
++    SetMenuInfo(topmenu, &mi);
++    
++    GetWindowRect(button, &rc);
++    
++    tpm.cbSize = sizeof(tpm);
++    tpm.rcExclude = rc;
++    
++    if (!TrackPopupMenuEx(topmenu,
++        TPM_LEFTALIGN|TPM_BOTTOMALIGN|TPM_VERTICAL,
++        rc.left, rc.top-1, hwnd, &tpm))
++    {
++        WINE_ERR("couldn't display menu\n");
++    }
++}
++
+diff --git a/programs/explorer/taskbar.c b/programs/explorer/taskbar.c
+index dd388c1..aa443d6 100644
+--- a/programs/explorer/taskbar.c
++++ b/programs/explorer/taskbar.c
+@@ -18,23 +18,26 @@
+ 
+ #define UNICODE
+ #include <windows.h>
++#include <commctrl.h>
+ #include "wine/debug.h"
+ #include "explorer_private.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(explorer);
+ 
+-UINT_PTR (WINAPI *pSHAppBarMessage)(DWORD,PAPPBARDATA);
+-
+ #define MSG_APPBAR WM_USER
+ 
+ #define TASKBAR_HEIGHT 25
+ 
+ static HWND taskbar_window;
+ static HWND systray_window;
++static HWND startbutton;
+ 
+ static void taskbar_setpos(void)
+ {
+     APPBARDATA abd;
++    RECT rc;
++    
++    /* TODO: Try to calculate the needed height */
+     
+     /* ask for an acceptable rect */
+     ZeroMemory(&abd, sizeof(abd));
+@@ -45,25 +48,33 @@ static void taskbar_setpos(void)
+     abd.rc.right = GetSystemMetrics(SM_CXSCREEN);
+     abd.rc.bottom = GetSystemMetrics(SM_CYSCREEN);
+     abd.rc.top = abd.rc.bottom - TASKBAR_HEIGHT;
+-    pSHAppBarMessage(ABM_QUERYPOS, &abd);
++    SHAppBarMessage(ABM_QUERYPOS, &abd);
+     
+     /* actually reserve a rect that has the correct height if QUERYPOS moved the bottom */
+     abd.rc.top = abd.rc.bottom - TASKBAR_HEIGHT;
+-    pSHAppBarMessage(ABM_SETPOS, &abd);
++    SHAppBarMessage(ABM_SETPOS, &abd);
+     
+     MoveWindow(taskbar_window, abd.rc.left, abd.rc.top, abd.rc.right-abd.rc.left, abd.rc.bottom-abd.rc.top, TRUE);
+     
+-    /* FIXME: adjust child positions */
++    /* FIXME: reposition start menu */
++    
++    /* right-align the systray */
++    GetWindowRect(systray_window, &rc);
++    
++    SetWindowPos(systray_window, HWND_TOP, abd.rc.right - abd.rc.left - (rc.right - rc.left), 1, 0, 0, SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
+ }
+ 
+-static LRESULT WINAPI taskbar_wndproc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
++static LRESULT WINAPI taskbar_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+ {
+     APPBARDATA abd;
++    LRESULT result;
+ 
+     switch (msg)
+     {
+     case WM_COPYDATA:
+-        return SendMessageW(systray_window, msg, wparam, lparam);
++        result = SendMessageW(systray_window, msg, wparam, lparam);
++        taskbar_setpos();
++        return result;
+ 
+     case WM_CLOSE:
+         /* FIXME: does this even make sense? */
+@@ -92,22 +103,46 @@ static LRESULT WINAPI taskbar_wndproc( HWND hwnd, UINT msg, WPARAM wparam, LPARA
+     case WM_WINDOWPOSCHANGED:
+         abd.cbSize = sizeof(abd);
+         abd.hWnd = hwnd;
+-        pSHAppBarMessage(ABM_WINDOWPOSCHANGED, &abd);
++        SHAppBarMessage(ABM_WINDOWPOSCHANGED, &abd);
+         break;
+ 
+     case WM_ACTIVATE:
+         abd.cbSize = sizeof(abd);
+         abd.hWnd = hwnd;
+-        pSHAppBarMessage(ABM_ACTIVATE, &abd);
++        SHAppBarMessage(ABM_ACTIVATE, &abd);
+         break;
+ #endif
+ 
+     case WM_DESTROY:
+         abd.cbSize = sizeof(abd);
+         abd.hWnd = hwnd;
+-        pSHAppBarMessage(ABM_REMOVE, &abd);
++        SHAppBarMessage(ABM_REMOVE, &abd);
++        break;
++    
++    case WM_COMMAND:
++        if ((HWND)lparam == startbutton && HIWORD(wparam) == BN_CLICKED)
++        {
++            do_startmenu(hwnd, startbutton);
++        }
++        break;
++
++    /* forward menu notifications to start menu */
++    case WM_INITMENU:
++    case WM_INITMENUPOPUP:
++    case WM_MENUSELECT:
++    case WM_MENUCHAR:
++    case WM_ENTERIDLE:
++    case WM_MENURBUTTONUP:
++    case WM_MENUDRAG:
++    case WM_MENUGETOBJECT:
++    case WM_UNINITMENUPOPUP:
++    case WM_MENUCOMMAND:
++    case WM_MEASUREITEM:
++    case WM_DRAWITEM:
++        return handle_menu(hwnd, msg, wparam, lparam);
+         break;
+     }
++    
+     return DefWindowProcW( hwnd, msg, wparam, lparam );
+ }
+ 
+@@ -116,26 +151,12 @@ void initialize_taskbar(void)
+ {
+     WNDCLASSEXW class;
+     APPBARDATA abd;
+-    HMODULE hshell32;
++    INITCOMMONCONTROLSEX initcomctl;
+     static const WCHAR classname[] = {'S','h','e','l','l','_','T','r','a','y','W','n','d',0};
+     static const WCHAR winname[] = {'W','i','n','e',' ','T','a','s','k','b','a','r',0};
+ 
+     /* FIXME: what if (is_systray_hidden()) ? */
+ 
+-    hshell32 = LoadLibraryA("shell32.dll");
+-    if (!hshell32)
+-    {
+-        WINE_ERR("Couldn't load shell32.dll\n");
+-        return;
+-    }
+-
+-    pSHAppBarMessage = (void *)GetProcAddress(hshell32, "SHAppBarMessage");
+-    if (!pSHAppBarMessage)
+-    {
+-        WINE_ERR("Couldn't load SHAppBarMessage symbol\n");
+-        return;
+-    }
+-
+     /* register the taskbar window class */
+     ZeroMemory(&class, sizeof(class));
+     class.cbSize        = sizeof(class);
+@@ -155,7 +176,7 @@ void initialize_taskbar(void)
+ 
+     /* create the taskbar */
+     taskbar_window = CreateWindowExW( WS_EX_TOOLWINDOW, classname, winname,
+-        WS_BORDER|WS_POPUP|WS_CLIPCHILDREN, 0, 0, 0, 0, 0, 0, 0, 0 );
++        WS_POPUP|WS_CLIPCHILDREN, 0, 0, 0, 0, 0, 0, 0, 0 );
+     if (!taskbar_window)
+     {
+         WINE_ERR("Could not create taskbar window\n");
+@@ -165,7 +186,7 @@ void initialize_taskbar(void)
+     abd.cbSize = sizeof(abd);
+     abd.hWnd = taskbar_window;
+     abd.uCallbackMessage = MSG_APPBAR;
+-    if (!pSHAppBarMessage(ABM_NEW, &abd))
++    if (!SHAppBarMessage(ABM_NEW, &abd))
+     {
+         WINE_ERR("Couldn't register taskbar as an appbar.\n");
+         DestroyWindow(taskbar_window);
+@@ -176,7 +197,17 @@ void initialize_taskbar(void)
+     systray_window = initialize_systray(taskbar_window);
+ 
+     taskbar_setpos();
++    
++    initcomctl.dwSize = sizeof(initcomctl);
++    initcomctl.dwICC = ICC_STANDARD_CLASSES;
++    InitCommonControlsEx(&initcomctl);
++    
++    /* FIXME: make the caption translateable */
++    startbutton = CreateWindowA( "Button", "Start", WS_CHILD|BS_PUSHBUTTON, 0, 1, 72, 24,
++        taskbar_window, 0, 0, 0);
++
+     ShowWindow(systray_window, SW_SHOW);
++    ShowWindow(startbutton, SW_SHOW);
+     ShowWindow(taskbar_window, SW_SHOW);
+ }
+ 
+-- 
+1.5.6.5
+

@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [
+    <!ENTITY stroke_color "#666666">
+    <!ENTITY fill_color "#FFFFFF">
+]>
+<svg
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   version="1.0"
+   width="55"
+   height="55"
+   viewBox="0 0 412.5 412.5"
+   id="svg2383"
+   style="fill-rule:evenodd;stroke-width:0.50099999;stroke-linejoin:bevel;overflow:visible">
+  <defs
+     id="defs2385">
+    <marker
+       markerUnits="strokeWidth"
+       markerWidth="1"
+       markerHeight="1"
+       orient="auto"
+       viewBox="0 0 1 1"
+       id="DefaultArrow2"
+       style="overflow:visible">
+      <g
+         transform="scale(9.2592592e-3,9.2592592e-3)"
+         id="g2388">
+        <path
+           d="M -9,54 L -9,-54 L 117,0 L -9,54 z"
+           id="path2390" />
+      </g>
+    </marker>
+    <marker
+       markerUnits="strokeWidth"
+       markerWidth="1"
+       markerHeight="1"
+       orient="auto"
+       viewBox="0 0 1 1"
+       id="DefaultArrow3"
+       style="overflow:visible">
+      <g
+         transform="scale(9.2592592e-3,9.2592592e-3)"
+         id="g2393">
+        <path
+           d="M -27,54 L -9,0 L -27,-54 L 135,0 L -27,54 z"
+           id="path2395" />
+      </g>
+    </marker>
+    <marker
+       markerUnits="strokeWidth"
+       markerWidth="1"
+       markerHeight="1"
+       orient="auto"
+       viewBox="0 0 1 1"
+       id="DefaultArrow4"
+       style="overflow:visible">
+      <g
+         transform="scale(9.2592592e-3,9.2592592e-3)"
+         id="g2398">
+        <path
+           d="M -9,0 L -9,-45 C -9,-51.708 2.808,-56.58 9,-54 L 117,-9 C 120.916,-7.369 126,-4.242 126,0 C 126,4.242 120.916,7.369 117,9 L 9,54 C 2.808,56.58 -9,51.708 -9,45 L -9,0 z"
+           id="path2400" />
+      </g>
+    </marker>
+    <marker
+       markerUnits="strokeWidth"
+       markerWidth="1"
+       markerHeight="1"
+       orient="auto"
+       viewBox="0 0 1 1"
+       id="DefaultArrow5"
+       style="overflow:visible">
+      <g
+         transform="scale(9.2592592e-3,9.2592592e-3)"
+         id="g2403">
+        <path
+           d="M -54,0 C -54,29.807 -29.807,54 0,54 C 29.807,54 54,29.807 54,0 C 54,-29.807 29.807,-54 0,-54 C -29.807,-54 -54,-29.807 -54,0 z"
+           id="path2405" />
+      </g>
+    </marker>
+    <marker
+       markerUnits="strokeWidth"
+       markerWidth="1"
+       markerHeight="1"
+       orient="auto"
+       viewBox="0 0 1 1"
+       id="DefaultArrow6"
+       style="overflow:visible">
+      <g
+         transform="scale(9.2592592e-3,9.2592592e-3)"
+         id="g2408">
+        <path
+           d="M -63,0 L 0,63 L 63,0 L 0,-63 L -63,0 z"
+           id="path2410" />
+      </g>
+    </marker>
+    <marker
+       markerUnits="strokeWidth"
+       markerWidth="1"
+       markerHeight="1"
+       orient="auto"
+       viewBox="0 0 1 1"
+       id="DefaultArrow7"
+       style="overflow:visible">
+      <g
+         transform="scale(9.2592592e-3,9.2592592e-3)"
+         id="g2413">
+        <path
+           d="M 18,-54 L 108,-54 L 63,0 L 108,54 L 18,54 L -36,0 L 18,-54 z"
+           id="path2415" />
+      </g>
+    </marker>
+    <marker
+       markerUnits="strokeWidth"
+       markerWidth="1"
+       markerHeight="1"
+       orient="auto"
+       viewBox="0 0 1 1"
+       id="DefaultArrow8"
+       style="overflow:visible">
+      <g
+         transform="scale(9.2592592e-3,9.2592592e-3)"
+         id="g2418">
+        <path
+           d="M -36,0 L 18,-54 L 54,-54 L 18,-18 L 27,-18 L 63,-54 L 99,-54 L 63,-18 L 72,-18 L 108,-54 L 144,-54 L 90,0 L 144,54 L 108,54 L 72,18 L 63,18 L 99,54 L 63,54 L 27,18 L 18,18 L 54,54 L 18,54 L -36,0 z"
+           id="path2420" />
+      </g>
+    </marker>
+    <marker
+       markerUnits="strokeWidth"
+       markerWidth="1"
+       markerHeight="1"
+       orient="auto"
+       viewBox="0 0 1 1"
+       id="DefaultArrow9"
+       style="overflow:visible">
+      <g
+         transform="scale(9.2592592e-3,9.2592592e-3)"
+         id="g2423">
+        <path
+           d="M 0,45 L -45,0 L 0,-45 L 45,0 L 0,45 z M 0,63 L -63,0 L 0,-63 L 63,0 L 0,63 z"
+           id="path2425" />
+      </g>
+    </marker>
+    <filter
+       id="StainedFilter">
+      <feBlend
+         id="feBlend2428"
+         result="blend"
+         in="SourceGraphic"
+         in2="BackgroundImage"
+         mode="multiply" />
+      <feComposite
+         id="feComposite2430"
+         result="comp"
+         operator="in"
+         in2="SourceAlpha"
+         in="blend" />
+    </filter>
+    <filter
+       id="BleachFilter">
+      <feBlend
+         id="feBlend2433"
+         result="blend"
+         in="SourceGraphic"
+         in2="BackgroundImage"
+         mode="screen" />
+      <feComposite
+         id="feComposite2435"
+         result="comp"
+         operator="in"
+         in2="SourceAlpha"
+         in="blend" />
+    </filter>
+    <filter
+       id="InvertTransparencyBitmapFilter">
+      <feComponentTransfer
+         id="feComponentTransfer2438">
+        <feFuncR
+           id="feFuncR2440"
+           offset="-0.055"
+           exponent=".416666666"
+           amplitude="1.055"
+           type="gamma" />
+        <feFuncG
+           id="feFuncG2442"
+           offset="-0.055"
+           exponent=".416666666"
+           amplitude="1.055"
+           type="gamma" />
+        <feFuncB
+           id="feFuncB2444"
+           offset="-0.055"
+           exponent=".416666666"
+           amplitude="1.055"
+           type="gamma" />
+      </feComponentTransfer>
+      <feComponentTransfer
+         id="feComponentTransfer2446">
+        <feFuncR
+           id="feFuncR2448"
+           intercept="1"
+           slope="-1"
+           type="linear" />
+        <feFuncG
+           id="feFuncG2450"
+           intercept="1"
+           slope="-1"
+           type="linear" />
+        <feFuncB
+           id="feFuncB2452"
+           intercept="1"
+           slope="-1"
+           type="linear" />
+        <feFuncA
+           id="feFuncA2454"
+           intercept="0"
+           slope="1"
+           type="linear" />
+      </feComponentTransfer>
+      <feComponentTransfer
+         id="feComponentTransfer2456">
+        <feFuncR
+           id="feFuncR2458"
+           offset="0"
+           exponent="2.4"
+           amplitude="1"
+           type="gamma" />
+        <feFuncG
+           id="feFuncG2460"
+           offset="0"
+           exponent="2.4"
+           amplitude="1"
+           type="gamma" />
+        <feFuncB
+           id="feFuncB2462"
+           offset="0"
+           exponent="2.4"
+           amplitude="1"
+           type="gamma" />
+      </feComponentTransfer>
+    </filter>
+  </defs>
+  <g
+     transform="scale(1,-1)"
+     id="Document"
+     style="font-size:16px;fill:none;stroke:&stroke_color;;font-family:Times New Roman">
+    <g
+       transform="translate(0,-412.5)"
+       id="Spread">
+      <g
+         id="BaseGeometry">
+        <path
+           d="M 242.87,46.321 C 214.995,39.538 178.458,38.028 175.915,48.481 C 174.219,55.45 188.311,68.436 213.486,76.076 C 222.337,100.372 219.039,129.093 209.62,152.635 C 205.527,162.865 191.363,165.047 182.78,171.937 C 155.692,193.681 141.711,225.052 131.484,260.732 C 130.727,263.374 129.991,266.039 129.271,268.725 C 128.625,271.136 127.992,273.565 127.371,276.009 C 161.426,203.824 237.96,310.29 239.05,305.45 C 248.211,264.802 254.058,220.561 238.527,185.502 C 234.07,175.441 222.493,166.983 223.556,156.026 C 226.007,130.789 236.274,103.762 255.296,86.249 C 283.315,89.898 299.651,85.971 301.345,79.002 C 303.89,68.549 270.743,53.102 242.87,46.321 z"
+           id="path2467"
+           style="fill:&stroke_color;;fill-opacity:0.98431402;stroke:&stroke_color;;stroke-width:21;marker-start:none;marker-end:none;stroke-miterlimit:79.84031677;stroke-opacity:0.98431402" />
+        <path
+           d="M 133.758,259.653 C 131.765,266.511 128.058,273.177 126.288,280.326 C 121.571,299.361 117.404,319.28 112.517,339.365 C 121.367,363.66 204.988,384.007 224.011,366.494 C 228.619,347.555 233.728,329.04 238.118,310.998 C 240.147,302.649 240.168,294.076 241.769,285.934 C 248.801,250.168 143.949,224.568 133.758,259.653 z"
+           id="path2469"
+           style="fill-opacity:0.98431402;stroke:&stroke_color;;stroke-width:21;marker-start:none;marker-end:none;stroke-miterlimit:79.84031677;stroke-opacity:0.98431402" />
+        <path
+           d="M 226.3,320.45 C 187.58,338.246 210.55,245.3 135.176,283.7 C 165.136,161.578 206.228,166.571 214.892,161.299 C 220.02,169.724 258.154,188.211 228.843,309.998 C 227.992,313.536 227.198,316.708 226.3,320.45 z"
+           id="path2471"
+           style="fill:&fill_color;;stroke:none;stroke-width:1.23899996;stroke-linejoin:miter;marker-start:none;marker-end:none;stroke-miterlimit:79.84031677" />
+      </g>
+    </g>
+  </g>
+</svg>

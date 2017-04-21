@@ -1,0 +1,134 @@
+From 2910614e728b091a401ed96ef455db1429ae12d5 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Tue, 2 Sep 2008 10:23:26 -0500
+Subject: [PATCH] tasklist: draw icons
+
+---
+ programs/explorer/tasklist.c |   58 +++++++++++++++++++++++++++++++++++++++---
+ 1 files changed, 54 insertions(+), 4 deletions(-)
+
+diff --git a/programs/explorer/tasklist.c b/programs/explorer/tasklist.c
+index af8359b..c99341d 100644
+--- a/programs/explorer/tasklist.c
++++ b/programs/explorer/tasklist.c
+@@ -35,6 +35,7 @@ struct toplevel_window
+     BOOL still_alive;
+     HWND button;
+     LPWSTR caption;
++    HICON icon;
+ };
+ 
+ static struct toplevel_window *toplevels=NULL;
+@@ -83,10 +84,35 @@ static void refresh_buttons(void)
+     }
+ }
+ 
+-static void update_window_caption(int index)
++static void set_icon(int index, HICON icon)
++{
++    if (toplevels[index].icon)
++        DestroyIcon(toplevels[index].icon);
++
++    toplevels[index].icon = icon;
++    
++    /* FIXME: queue a redraw */
++}
++
++static VOID CALLBACK update_icon_async(HWND hwnd, UINT msg, ULONG_PTR data, LRESULT result)
++{
++    int index = (int)data;
++
++    if (index >= toplevels_len && toplevels[index].hwnd != hwnd)
++    {
++        index = get_toplevel(hwnd);
++        if (index == -1)
++            return;
++    }
++
++    set_icon(index, (HICON)result);
++}
++
++static void update_window(int index)
+ {
+     int length;
+     LPWSTR caption;
++    HICON icon=NULL;
+ 
+     HeapFree(GetProcessHeap(), 0, toplevels[index].caption);
+ 
+@@ -97,6 +123,16 @@ static void update_window_caption(int index)
+         caption[0] = 0;
+ 
+     toplevels[index].caption = caption;
++#if 0
++    /* FIXME: this is useless because we don't support getting class icons cross-process */
++    icon = (HICON)GetClassLongPtrW(toplevels[index].hwnd, GCLP_HICONSM);
++    if (!icon) icon = (HICON)GetClassLongPtrW(toplevels[index].hwnd, GCLP_HICON);
++#endif
++    if (icon)
++        set_icon(index, icon);
++    else /* FIXME: don't allow WM_GETICON messages to build up */
++        SendMessageCallbackW(toplevels[index].hwnd, WM_GETICON, ICON_BIG, 0,
++            update_icon_async, (ULONG_PTR)index);
+ }
+ 
+ /* add a window to the list and return its index */
+@@ -120,12 +156,13 @@ static int add_hwnd(HWND hwnd)
+     toplevels[result].hwnd = hwnd;
+ 
+     toplevels[result].button = CreateWindowW(buttonW, buttonW, WS_VISIBLE|WS_CHILD|BS_PUSHBUTTON|BS_LEFT|BS_OWNERDRAW, 0, 0, 0, 0, tasklist, (HMENU)result, NULL, NULL);
+-
+     orig_button_proc = (WNDPROC)SetWindowLongPtrW(toplevels[result].button, GWLP_WNDPROC, (LONG_PTR)button_wndproc);
+ 
++    toplevels[result].icon = NULL;
++
+     toplevels[result].caption = NULL;
+ 
+-    update_window_caption(result);
++    update_window(result);
+ 
+     refresh_buttons();
+ 
+@@ -223,7 +260,7 @@ static BOOL CALLBACK handle_enumwindow(HWND hwnd, LPARAM lparam)
+     }
+     else
+     {
+-        update_window_caption(window);
++        update_window(window);
+     }
+     
+     toplevels[window].still_alive = TRUE;
+@@ -320,17 +357,30 @@ static LRESULT WINAPI tasklist_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
+             BOOL pushed;
+             LOGFONTA lf;
+             HFONT font, oldFont;
++            int cxsmicon, cysmicon;
+             
+             pushed = SendMessageW(dis->hwndItem, BM_GETSTATE, 0, 0) & BST_PUSHED;
+             
++            /* draw button frame */
+             DrawFrameControl(dis->hDC, &dis->rcItem, DFC_BUTTON, DFCS_BUTTONPUSH|(pushed?DFCS_PUSHED:0));
+             
++            /* calculate rect of face */
+             rc = dis->rcItem;
+             
+             InflateRect(&rc, -3, -3);
+             if (pushed)
+                 OffsetRect(&rc, 1, 1);
+             
++            /* draw icon */
++            if (toplevels[id].icon)
++            {
++                cxsmicon = GetSystemMetrics(SM_CXSMICON);
++                cysmicon = GetSystemMetrics(SM_CYSMICON);
++                DrawIconEx(dis->hDC, rc.left, rc.top, toplevels[id].icon, cxsmicon, cysmicon, 0, NULL, DI_NORMAL);
++                rc.left += cxsmicon+2;
++            }
++            
++            /* draw caption */
+             ZeroMemory(&lf, sizeof(lf));
+             lf.lfHeight = -12;
+             lf.lfWeight = FW_NORMAL;
+-- 
+1.5.6.5
+

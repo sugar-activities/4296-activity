@@ -1,0 +1,222 @@
+From cc74d3d9e157720d1d745d3d071ee8f62d890cad Mon Sep 17 00:00:00 2001
+From: nobody <nobody@nowhere>
+Date: Wed, 19 Aug 2009 14:29:46 -0500
+Subject: [PATCH] Revert "user32: Added DrawIconEx alpha blending support."
+
+This reverts commit d1c89d0a78e27f82debe9d7a2de185ae13b6e481.
+---
+ dlls/user32/cursoricon.c       |  102 +++++++++++-----------------------------
+ dlls/user32/tests/cursoricon.c |   26 ++++++----
+ 2 files changed, 43 insertions(+), 85 deletions(-)
+
+diff --git a/dlls/user32/cursoricon.c b/dlls/user32/cursoricon.c
+index 48a1a59..9b7dce4 100644
+--- a/dlls/user32/cursoricon.c
++++ b/dlls/user32/cursoricon.c
+@@ -2272,33 +2272,25 @@ BOOL WINAPI DrawIconEx( HDC hdc, INT x0, INT y0, HICON hIcon,
+                             INT cxWidth, INT cyWidth, UINT istep,
+                             HBRUSH hbr, UINT flags )
+ {
+-    CURSORICONINFO *ptr;
++    CURSORICONINFO *ptr = GlobalLock16(HICON_16(hIcon));
+     HDC hDC_off = 0, hMemDC;
+     BOOL result = FALSE, DoOffscreen;
+     HBITMAP hB_off = 0, hOld = 0;
+-    unsigned char *xorBitmapBits;
+-    unsigned int xorLength;
+-    BOOL has_alpha = FALSE;
+ 
++    if (!ptr) return FALSE;
+     TRACE_(icon)("(hdc=%p,pos=%d.%d,hicon=%p,extend=%d.%d,istep=%d,br=%p,flags=0x%08x)\n",
+                  hdc,x0,y0,hIcon,cxWidth,cyWidth,istep,hbr,flags );
+ 
+-    if (!(ptr = GlobalLock16(HICON_16(hIcon)))) return FALSE;
+-    if (!(hMemDC = CreateCompatibleDC( hdc ))) return FALSE;
+-
++    hMemDC = CreateCompatibleDC (hdc);
+     if (istep)
+         FIXME_(icon)("Ignoring istep=%d\n", istep);
+     if (flags & DI_NOMIRROR)
+         FIXME_(icon)("Ignoring flag DI_NOMIRROR\n");
+ 
+-    xorLength = ptr->nHeight * get_bitmap_width_bytes(
+-        ptr->nWidth, ptr->bBitsPerPixel);
+-    xorBitmapBits = (unsigned char *)(ptr + 1) + ptr->nHeight *
+-                    get_bitmap_width_bytes(ptr->nWidth, 1);
+-
+-    if (flags & DI_IMAGE)
+-        has_alpha = bitmap_has_alpha_channel(
+-            ptr->bBitsPerPixel, xorBitmapBits, xorLength);
++    if (!flags) {
++        FIXME_(icon)("no flags set? setting to DI_NORMAL\n");
++        flags = DI_NORMAL;
++    }
+ 
+     /* Calculate the size of the destination image.  */
+     if (cxWidth == 0)
+@@ -2336,90 +2328,50 @@ BOOL WINAPI DrawIconEx( HDC hdc, INT x0, INT y0, HICON hIcon,
+ 
+     if (hMemDC && (!DoOffscreen || (hDC_off && hB_off)))
+     {
+-        HBITMAP hBitTemp;
+-        HBITMAP hXorBits = NULL, hAndBits = NULL;
++        HBITMAP hXorBits, hAndBits;
+         COLORREF  oldFg, oldBg;
+         INT     nStretchMode;
+ 
+         nStretchMode = SetStretchBltMode (hdc, STRETCH_DELETESCANS);
+ 
++        hXorBits = CreateBitmap ( ptr->nWidth, ptr->nHeight,
++                                  ptr->bPlanes, ptr->bBitsPerPixel,
++                                  (char *)(ptr + 1)
++                                  + ptr->nHeight *
++                                  get_bitmap_width_bytes(ptr->nWidth,1) );
++        hAndBits = CreateBitmap ( ptr->nWidth, ptr->nHeight, 1, 1, ptr + 1 );
+         oldFg = SetTextColor( hdc, RGB(0,0,0) );
+         oldBg = SetBkColor( hdc, RGB(255,255,255) );
+ 
+-        if (((flags & DI_MASK) && !(flags & DI_IMAGE)) ||
+-            ((flags & DI_MASK) && !has_alpha))
++        if (hXorBits && hAndBits)
+         {
+-            hAndBits = CreateBitmap ( ptr->nWidth, ptr->nHeight, 1, 1, ptr + 1 );
+-            if (hAndBits)
++            HBITMAP hBitTemp = SelectObject( hMemDC, hAndBits );
++            if (flags & DI_MASK)
+             {
+-                hBitTemp = SelectObject( hMemDC, hAndBits );
+                 if (DoOffscreen)
+                     StretchBlt (hDC_off, 0, 0, cxWidth, cyWidth,
+                                 hMemDC, 0, 0, ptr->nWidth, ptr->nHeight, SRCAND);
+                 else
+                     StretchBlt (hdc, x0, y0, cxWidth, cyWidth,
+                                 hMemDC, 0, 0, ptr->nWidth, ptr->nHeight, SRCAND);
+-                SelectObject( hMemDC, hBitTemp );
+             }
+-        }
+-
+-        if (flags & DI_IMAGE)
+-        {
+-            BITMAPINFOHEADER bmih;
+-            unsigned char *dibBits;
+-
+-            memset(&bmih, 0, sizeof(BITMAPINFOHEADER));
+-            bmih.biSize = sizeof(BITMAPINFOHEADER);
+-            bmih.biWidth = ptr->nWidth;
+-            bmih.biHeight = -ptr->nHeight;
+-            bmih.biPlanes = ptr->bPlanes;
+-            bmih.biBitCount = ptr->bBitsPerPixel;
+-            bmih.biCompression = BI_RGB;
+-
+-            hXorBits = CreateDIBSection(hdc, (BITMAPINFO*)&bmih, DIB_RGB_COLORS,
+-                                        (void*)&dibBits, NULL, 0);
+-
+-            if (hXorBits && dibBits)
++            SelectObject( hMemDC, hXorBits );
++            if (flags & DI_IMAGE)
+             {
+-                if(has_alpha)
+-                {
+-                    BLENDFUNCTION pixelblend = { AC_SRC_OVER, 0, 255, AC_SRC_ALPHA };
+-
+-                    /* Do the alpha blending render */
+-                    premultiply_alpha_channel(dibBits, xorBitmapBits, xorLength);
+-                    hBitTemp = SelectObject( hMemDC, hXorBits );
+-
+-                    if (DoOffscreen)
+-                        GdiAlphaBlend(hDC_off, 0, 0, cxWidth, cyWidth, hMemDC,
+-                                        0, 0, ptr->nWidth, ptr->nHeight, pixelblend);
+-                    else
+-                        GdiAlphaBlend(hdc, x0, y0, cxWidth, cyWidth, hMemDC,
+-                                        0, 0, ptr->nWidth, ptr->nHeight, pixelblend);
+-
+-                    SelectObject( hMemDC, hBitTemp );
+-                }
++                if (DoOffscreen)
++                    StretchBlt (hDC_off, 0, 0, cxWidth, cyWidth,
++                                hMemDC, 0, 0, ptr->nWidth, ptr->nHeight, SRCPAINT);
+                 else
+-                {
+-                    memcpy(dibBits, xorBitmapBits, xorLength);
+-                    hBitTemp = SelectObject( hMemDC, hXorBits );
+-                    if (DoOffscreen)
+-                        StretchBlt (hDC_off, 0, 0, cxWidth, cyWidth,
+-                                    hMemDC, 0, 0, ptr->nWidth, ptr->nHeight, SRCPAINT);
+-                    else
+-                        StretchBlt (hdc, x0, y0, cxWidth, cyWidth,
+-                                    hMemDC, 0, 0, ptr->nWidth, ptr->nHeight, SRCPAINT);
+-                    SelectObject( hMemDC, hBitTemp );
+-                }
+-
+-                DeleteObject( hXorBits );
++                    StretchBlt (hdc, x0, y0, cxWidth, cyWidth,
++                                hMemDC, 0, 0, ptr->nWidth, ptr->nHeight, SRCPAINT);
+             }
++            SelectObject( hMemDC, hBitTemp );
++            result = TRUE;
+         }
+ 
+-        result = TRUE;
+-
+         SetTextColor( hdc, oldFg );
+         SetBkColor( hdc, oldBg );
+-
++        if (hXorBits) DeleteObject( hXorBits );
+         if (hAndBits) DeleteObject( hAndBits );
+         SetStretchBltMode (hdc, nStretchMode);
+         if (DoOffscreen) {
+diff --git a/dlls/user32/tests/cursoricon.c b/dlls/user32/tests/cursoricon.c
+index 3f8bd82..71bf104 100644
+--- a/dlls/user32/tests/cursoricon.c
++++ b/dlls/user32/tests/cursoricon.c
+@@ -1167,8 +1167,11 @@ static void test_DrawIconEx(void)
+     bmpOld = SelectObject(hdcDst, bmpDst);
+ 
+     /* Test null, image only, and mask only drawing */
+-    check_DrawIconEx(hdcDst, FALSE, 0x00A0B0C0, 32, 0, 0x00102030, 0x00102030, 0x00102030, __LINE__);
+-    check_DrawIconEx(hdcDst, TRUE, 0x00A0B0C0, 32, 0, 0x00102030, 0x00102030, 0x00102030, __LINE__);
++    todo_wine
++    {
++        check_DrawIconEx(hdcDst, FALSE, 0x00A0B0C0, 32, 0, 0x00102030, 0x00102030, 0x00102030, __LINE__);
++        check_DrawIconEx(hdcDst, TRUE, 0x00A0B0C0, 32, 0, 0x00102030, 0x00102030, 0x00102030, __LINE__);
++    }
+ 
+     check_DrawIconEx(hdcDst, FALSE, 0x80A0B0C0, 32, DI_MASK, 0x00FFFFFF, 0x00000000, 0x00000000, __LINE__);
+     check_DrawIconEx(hdcDst, TRUE, 0x80A0B0C0, 32, DI_MASK, 0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF, __LINE__);
+@@ -1186,22 +1189,25 @@ static void test_DrawIconEx(void)
+ 
+     /* Test alpha blending */
+     /* Windows 2000 and up will alpha blend, earlier Windows versions will not */
+-    check_DrawIconEx(hdcDst, TRUE, 0xFFA0B0C0, 32, DI_NORMAL, 0x00FFFFFF, 0x00C0B0A0, 0x003F4F5F, __LINE__);
++    todo_wine check_DrawIconEx(hdcDst, TRUE, 0xFFA0B0C0, 32, DI_NORMAL, 0x00FFFFFF, 0x00C0B0A0, 0x003F4F5F, __LINE__);
+ 
+-    check_DrawIconEx(hdcDst, FALSE, 0x80A0B0C0, 32, DI_NORMAL, 0x00000000, 0x00605850, 0x00C0B0A0, __LINE__);
+-    check_DrawIconEx(hdcDst, TRUE, 0x80A0B0C0, 32, DI_NORMAL, 0x00000000, 0x00605850, 0x00C0B0A0, __LINE__);
+-    check_DrawIconEx(hdcDst, FALSE, 0x80A0B0C0, 32, DI_NORMAL, 0x00FFFFFF, 0x00DFD7CF, 0x00C0B0A0, __LINE__);
+-    check_DrawIconEx(hdcDst, TRUE, 0x80A0B0C0, 32, DI_NORMAL, 0x00FFFFFF, 0x00DFD7CF, 0x003F4F5F, __LINE__);
++    todo_wine
++    {
++        check_DrawIconEx(hdcDst, FALSE, 0x80A0B0C0, 32, DI_NORMAL, 0x00000000, 0x00605850, 0x00C0B0A0, __LINE__);
++        check_DrawIconEx(hdcDst, TRUE, 0x80A0B0C0, 32, DI_NORMAL, 0x00000000, 0x00605850, 0x00C0B0A0, __LINE__);
++        check_DrawIconEx(hdcDst, FALSE, 0x80A0B0C0, 32, DI_NORMAL, 0x00FFFFFF, 0x00DFD7CF, 0x00C0B0A0, __LINE__);
++        check_DrawIconEx(hdcDst, TRUE, 0x80A0B0C0, 32, DI_NORMAL, 0x00FFFFFF, 0x00DFD7CF, 0x003F4F5F, __LINE__);
+ 
+-    check_DrawIconEx(hdcDst, FALSE, 0x01FFFFFF, 32, DI_NORMAL, 0x00000000, 0x00010101, 0x00FFFFFF, __LINE__);
+-    check_DrawIconEx(hdcDst, TRUE, 0x01FFFFFF, 32, DI_NORMAL, 0x00000000, 0x00010101, 0x00FFFFFF, __LINE__);
++        check_DrawIconEx(hdcDst, FALSE, 0x01FFFFFF, 32, DI_NORMAL, 0x00000000, 0x00010101, 0x00FFFFFF, __LINE__);
++        check_DrawIconEx(hdcDst, TRUE, 0x01FFFFFF, 32, DI_NORMAL, 0x00000000, 0x00010101, 0x00FFFFFF, __LINE__);
++    }
+ 
+     /* Test detecting of alpha channel */
+     /* If a single pixel's alpha channel is non-zero, the icon
+        will be alpha blended, otherwise it will be draw with
+        and + xor blts. */
+     check_alpha_draw(hdcDst, TRUE, FALSE, 32, __LINE__);
+-    check_alpha_draw(hdcDst, TRUE, TRUE, 32, __LINE__);
++    todo_wine check_alpha_draw(hdcDst, TRUE, TRUE, 32, __LINE__);
+ 
+ cleanup:
+     if(bmpOld)
+-- 
+1.5.6.5
+

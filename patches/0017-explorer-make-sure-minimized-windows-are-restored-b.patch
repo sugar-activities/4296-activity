@@ -1,0 +1,30 @@
+From d1f5157540b8e4cf2177954fa92d8c130c6a12c4 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Thu, 25 Sep 2008 14:56:29 -0500
+Subject: [PATCH] explorer: make sure minimized windows are restored before making them the foreground
+
+This seems to clear up some focus problems when restoring minimized
+windows.
+---
+ programs/explorer/tasklist.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/programs/explorer/tasklist.c b/programs/explorer/tasklist.c
+index c99341d..26de448 100644
+--- a/programs/explorer/tasklist.c
++++ b/programs/explorer/tasklist.c
+@@ -303,9 +303,9 @@ static void handle_click(int index)
+     }
+     else
+     {
+-        SetForegroundWindow(hwnd);
+         if (style & WS_MINIMIZE)
+-            PostMessageW(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
++            SendMessageW(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
++        SetForegroundWindow(hwnd);
+         foreground_changed(hwnd);
+     }
+ }
+-- 
+1.5.6.5
+

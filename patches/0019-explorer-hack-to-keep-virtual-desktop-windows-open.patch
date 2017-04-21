@@ -1,0 +1,31 @@
+From a461cbdc6bc73a4abeaa6cbf23645a5193e2367d Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Fri, 26 Sep 2008 14:25:11 -0500
+Subject: [PATCH] explorer: hack to keep virtual desktop windows open when processes close
+
+---
+ programs/explorer/desktop.c |    8 +++++++-
+ 1 files changed, 7 insertions(+), 1 deletions(-)
+
+diff --git a/programs/explorer/desktop.c b/programs/explorer/desktop.c
+index 3741315..5f1622c 100644
+--- a/programs/explorer/desktop.c
++++ b/programs/explorer/desktop.c
+@@ -71,7 +71,13 @@ static LRESULT WINAPI desktop_wnd_proc( HWND hwnd, UINT message, WPARAM wp, LPAR
+         return 0;
+ 
+     case WM_CLOSE:
+-        PostQuitMessage(0);
++/* Horrible hack to keep virtual desktops open when the last process closes.
++
++When the user closes the desktop window, we get a WM_SYSCOMMAND message, which
++is handled separately. But when the last process closes, we get a WM_CLOSE. I'm
++taking advantage of this coincidence. */
++        if (using_root)
++            PostQuitMessage(0);
+         return 0;
+ 
+     case WM_SETCURSOR:
+-- 
+1.5.6.5
+

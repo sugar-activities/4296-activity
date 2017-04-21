@@ -1,0 +1,92 @@
+From 609b33e2d34db031b31a931ca62cf9cadddff4b6 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Thu, 18 Sep 2008 13:56:10 -0500
+Subject: [PATCH] taskbar: make the start menu user-drawn
+
+---
+ programs/explorer/taskbar.c |   55 +++++++++++++++++++++++++++++++++++++++---
+ 1 files changed, 51 insertions(+), 4 deletions(-)
+
+diff --git a/programs/explorer/taskbar.c b/programs/explorer/taskbar.c
+index f79a4c9..cae25a0 100644
+--- a/programs/explorer/taskbar.c
++++ b/programs/explorer/taskbar.c
+@@ -129,7 +129,54 @@ static LRESULT WINAPI taskbar_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM
+         }
+         break;
+ 
+-    /* forward menu notifications to start menu */
++    case WM_DRAWITEM:
++        if (wparam != 0)
++        {
++            /* draw start button */
++            DRAWITEMSTRUCT* dis=(DRAWITEMSTRUCT*)lparam;
++            RECT rc;
++            BOOL pushed;
++            LOGFONTA lf;
++            HFONT font, oldFont;
++            int cxsmicon, cysmicon;
++            HICON icon;
++
++            pushed = SendMessageW(dis->hwndItem, BM_GETSTATE, 0, 0) & BST_PUSHED;
++
++            /* draw button frame */
++            DrawFrameControl(dis->hDC, &dis->rcItem, DFC_BUTTON, DFCS_BUTTONPUSH|(pushed?DFCS_PUSHED:0));
++
++            /* calculate rect of face */
++            rc = dis->rcItem;
++
++            InflateRect(&rc, -3, -3);
++            if (pushed)
++                OffsetRect(&rc, 1, 1);
++
++            /* draw icon */
++            icon = LoadIconW(NULL, (LPCWSTR)IDI_WINLOGO);
++            cxsmicon = GetSystemMetrics(SM_CXSMICON);
++            cysmicon = GetSystemMetrics(SM_CYSMICON);
++            DrawIconEx(dis->hDC, rc.left, rc.top, icon, cxsmicon, cysmicon, 0, NULL, DI_NORMAL);
++            rc.left += cxsmicon+2;
++            DestroyIcon(icon);
++
++            /* draw caption */
++            ZeroMemory(&lf, sizeof(lf));
++            lf.lfHeight = -12;
++            lf.lfWeight = FW_NORMAL;
++            lf.lfPitchAndFamily = DEFAULT_PITCH|FF_SWISS;
++            strcpy(lf.lfFaceName, "Arial");
++            font = CreateFontIndirectA(&lf);
++            
++            oldFont = SelectObject(dis->hDC, font);
++            DrawTextA(dis->hDC, "Start", -1, &rc, DT_LEFT|DT_TOP|DT_SINGLELINE|DT_WORD_ELLIPSIS);
++            SelectObject(dis->hDC, oldFont);
++            
++            DeleteObject(font);
++            break;
++        }
++        /* else fall-through */
+     case WM_INITMENU:
+     case WM_INITMENUPOPUP:
+     case WM_MENUSELECT:
+@@ -141,7 +188,7 @@ static LRESULT WINAPI taskbar_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM
+     case WM_UNINITMENUPOPUP:
+     case WM_MENUCOMMAND:
+     case WM_MEASUREITEM:
+-    case WM_DRAWITEM:
++        /* forward menu notifications to start menu */
+         return handle_menu(hwnd, msg, wparam, lparam);
+         break;
+     }
+@@ -204,8 +251,8 @@ void initialize_taskbar(void)
+     InitCommonControlsEx(&initcomctl);
+ 
+     /* FIXME: make the caption translateable */
+-    startbutton = CreateWindowA( "Button", "Start", WS_CHILD|BS_PUSHBUTTON, 0, 1, 72, 24,
+-        taskbar_window, 0, 0, 0);
++    startbutton = CreateWindowA( "Button", "Start", WS_CHILD|BS_PUSHBUTTON|BS_OWNERDRAW, 0, 1, 72, 24,
++        taskbar_window, (HMENU)1, 0, 0);
+ 
+     tasklist_window = initialize_tasklist(taskbar_window);
+ 
+-- 
+1.5.6.5
+

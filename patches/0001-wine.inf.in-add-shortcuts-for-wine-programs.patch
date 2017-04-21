@@ -1,0 +1,58 @@
+From 1398b88e4b6d0b9729ad1af3d72e06eefc00779d Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Wed, 10 Sep 2008 12:28:38 -0500
+Subject: [PATCH] wine.inf.in: add shortcuts for wine programs
+
+---
+ tools/wine.inf.in |   24 ++++++++++++++++++++++++
+ 1 files changed, 24 insertions(+), 0 deletions(-)
+
+diff --git a/tools/wine.inf.in b/tools/wine.inf.in
+index 28baf76..338c6b2 100644
+--- a/tools/wine.inf.in
++++ b/tools/wine.inf.in
+@@ -49,6 +49,10 @@ AddReg=\
+     Services, \
+     Tapi,\
+     Timezones
++ProfileItems=\
++    Notepad,\
++    Winemine,\
++    Cmd
+ 
+ [DefaultInstall.NT]
+ RegisterDlls=RegisterDllsSection
+@@ -74,6 +78,10 @@ AddReg=\
+     Tapi,\
+     Timezones,\
+     VersionInfo
++ProfileItems=\
++    Notepad,\
++    Winemine,\
++    Cmd
+ 
+ [DefaultInstall.Services]
+ AddService=MountMgr,0x800,MountMgrService
+@@ -2946,3 +2954,19 @@ HKLM,%CurrentVersionNT%,"CurrentType",2,"Uniprocessor Free"
+ HKLM,%Control%\ProductOptions,"ProductType",2,"WinNT"
+ HKLM,%Control%\Windows,"CSDVersion",0x10003,0x300
+ HKLM,%Control%\Session Manager\Environment,"OS",2,"Windows_NT"
++
++[Notepad]
++Name=Notepad
++CmdLine=11,,notepad.exe
++SubDir=Accessories
++
++[Winemine]
++Name=WineMine
++CmdLine=11,,winemine.exe
++SubDir=Games
++
++[Cmd]
++Name=Command Prompt
++CmdLine=11,,wineconsole.exe --backend=user cmd
++SubDir=Accessories
++
+-- 
+1.5.6.5
+

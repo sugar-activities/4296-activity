@@ -1,0 +1,32 @@
+From 6d1c793388a6288815d1ce6d3dc896b517c5fa06 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Thu, 25 Sep 2008 13:27:30 -0500
+Subject: [PATCH] winex11: ignore WM_TAKE_FOCUS requests for desktop windows
+
+---
+ dlls/winex11.drv/event.c |    9 +++++++++
+ 1 files changed, 9 insertions(+), 0 deletions(-)
+
+diff --git a/dlls/winex11.drv/event.c b/dlls/winex11.drv/event.c
+index 8071e86..00b007e 100644
+--- a/dlls/winex11.drv/event.c
++++ b/dlls/winex11.drv/event.c
+@@ -553,6 +553,15 @@ static void handle_wm_protocols( HWND hwnd, XClientMessageEvent *event )
+                hwnd, IsWindowEnabled(hwnd), IsWindowVisible(hwnd), GetWindowLongW(hwnd, GWL_STYLE),
+                GetFocus(), GetActiveWindow(), GetForegroundWindow(), last_focus );
+ 
++        if (hwnd == GetDesktopWindow())
++        {
++            /* Because the thread controlling the desktop window also has other
++                windows (the taskbar), and we don't want them to steal the focus
++                from real applications, we ignore WM_TAKE_FOCUS in this case. */
++            TRACE( "ignoring take focus message for desktop window\n" );
++            return;
++        }
++
+         if (can_activate_window(hwnd))
+         {
+             /* simulate a mouse click on the caption to find out
+-- 
+1.5.6.5
+

@@ -1,0 +1,33 @@
+From a232a1fe8efaead4375f2d569c2b5901a1e35007 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Thu, 16 Oct 2008 16:24:27 -0500
+Subject: [PATCH] explorer: calculate the maximum taskbar button width from the height
+
+---
+ programs/explorer/tasklist.c |    3 +--
+ 1 files changed, 1 insertions(+), 2 deletions(-)
+
+diff --git a/programs/explorer/tasklist.c b/programs/explorer/tasklist.c
+index a6432f0..44df781 100644
+--- a/programs/explorer/tasklist.c
++++ b/programs/explorer/tasklist.c
+@@ -44,7 +44,6 @@ static int toplevels_size = 0; /* amount of allocated memory in toplevels[] */
+ 
+ HWND foreground;
+ 
+-#define MAX_BUTTON_WIDTH 150
+ static int button_width = 0;
+ 
+ static LRESULT WINAPI button_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
+@@ -74,7 +73,7 @@ static void refresh_buttons(void)
+ 
+     GetWindowRect(tasklist, &rc);
+ 
+-    button_width = min(MAX_BUTTON_WIDTH, (rc.right - rc.left) / toplevels_len);
++    button_width = min((rc.bottom - rc.top) * 9, (rc.right - rc.left) / toplevels_len);
+ 
+     for (i=0; i<toplevels_len; i++)
+     {
+-- 
+1.5.6.5
+

@@ -1,0 +1,60 @@
+#!/usr/bin/env python
+# Copyright (C) 2008, Vincent Povirk for CodeWeavers
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the
+# Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+# Boston, MA 02111-1307, USA.
+
+import sys
+import os
+import tempfile
+import atexit
+
+from sugar import profile
+from sugar.datastore import datastore
+from sugar.activity.activity import show_object_in_journal
+
+uri = sys.argv[1]
+
+dsobject = datastore.create()
+
+atexit.register(dsobject.destroy)
+
+dsobject.metadata['mime_type'] = 'text/uri-list'
+dsobject.metadata['title'] = uri
+
+try:
+    urifd, urifilename = tempfile.mkstemp(dir=os.path.join(os.environ['SUGAR_ACTIVITY_ROOT'], 'instance'))
+except KeyError:
+    urifd, urifilename = tempfile.mkstemp()
+
+atexit.register(os.unlink, urifilename)
+
+def write_data(fd, data):
+    bytes_written = 0
+    while bytes_written < len(data):
+        bytes_written += os.write(fd, data[bytes_written:])
+
+write_data(urifd, '%s\r\n' % uri)
+
+os.close(urifd)
+
+os.chmod(urifilename, int('644', 8))
+
+dsobject.file_path = urifilename
+
+datastore.write(dsobject)
+
+show_object_in_journal(dsobject.object_id)
+

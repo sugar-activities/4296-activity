@@ -1,0 +1,30 @@
+From 7bd757867e4c4b18855b85834feec2ae50c03a64 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Thu, 25 Sep 2008 16:24:28 -0500
+Subject: [PATCH] winex11: use a flag that I don't understand when processing keyboard events
+
+This works around an issue I also don't understand where keyboard events
+only go to windows when the pointer is above them.
+
+I'm sure this has unintended consequences, but I'm glad I don't know
+what they are yet.
+---
+ dlls/winex11.drv/keyboard.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/dlls/winex11.drv/keyboard.c b/dlls/winex11.drv/keyboard.c
+index 3da7183..9185de0 100644
+--- a/dlls/winex11.drv/keyboard.c
++++ b/dlls/winex11.drv/keyboard.c
+@@ -1478,7 +1478,7 @@ void X11DRV_KeyEvent( HWND hwnd, XEvent *xev )
+     bScan = keyc2scan[event->keycode] & 0xFF;
+     TRACE_(key)("bScan = 0x%02x.\n", bScan);
+ 
+-    X11DRV_send_keyboard_input( vkey & 0xff, bScan, dwFlags, event_time, 0, 0 );
++    X11DRV_send_keyboard_input( vkey & 0xff, bScan, dwFlags, event_time, 0, LLKHF_INJECTED );
+ }
+ 
+ /**********************************************************************
+-- 
+1.5.6.5
+

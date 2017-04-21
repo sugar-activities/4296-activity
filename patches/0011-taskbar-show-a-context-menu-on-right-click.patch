@@ -1,0 +1,86 @@
+From 0e5d2133a577e691b272d15be554a5a3beb85027 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Fri, 29 Aug 2008 08:37:32 -0500
+Subject: [PATCH] taskbar: show a context menu on right-click
+
+---
+ programs/explorer/taskbar.c  |    2 +-
+ programs/explorer/tasklist.c |   28 ++++++++++++++++++++++++++++
+ 2 files changed, 29 insertions(+), 1 deletions(-)
+
+diff --git a/programs/explorer/taskbar.c b/programs/explorer/taskbar.c
+index 0a7becf..f79a4c9 100644
+--- a/programs/explorer/taskbar.c
++++ b/programs/explorer/taskbar.c
+@@ -178,7 +178,7 @@ void initialize_taskbar(void)
+     }
+ 
+     /* create the taskbar */
+-    taskbar_window = CreateWindowExW( WS_EX_TOOLWINDOW, classname, winname,
++    taskbar_window = CreateWindowExW( WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE, classname, winname,
+         WS_POPUP|WS_CLIPCHILDREN, 0, 0, 0, 0, 0, 0, 0, 0 );
+     if (!taskbar_window)
+     {
+diff --git a/programs/explorer/tasklist.c b/programs/explorer/tasklist.c
+index 802345a..a244165 100644
+--- a/programs/explorer/tasklist.c
++++ b/programs/explorer/tasklist.c
+@@ -23,6 +23,8 @@
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(explorer);
+ 
++#define WM_POPUPSYSTEMMENU 0x0313
++
+ static HWND tasklist;
+ 
+ static WCHAR classname[] = {'t','a','s','k','l','i','s','t',0};
+@@ -44,6 +46,9 @@ HWND foreground;
+ #define MAX_BUTTON_WIDTH 150
+ static int button_width = 0;
+ 
++static LRESULT WINAPI button_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
++WNDPROC orig_button_proc = NULL;
++
+ /* get the index of a window in the toplevels list; this can change */
+ static int get_toplevel(HWND hwnd)
+ {
+@@ -114,6 +119,8 @@ static int add_hwnd(HWND hwnd)
+ 
+     toplevels[result].button = CreateWindowW(buttonW, buttonW, WS_VISIBLE|WS_CHILD|BS_PUSHBUTTON|BS_LEFT, 0, 0, 0, 0, tasklist, (HMENU)result, NULL, NULL);
+ 
++    orig_button_proc = (WNDPROC)SetWindowLongPtrW(toplevels[result].button, GWLP_WNDPROC, (LONG_PTR)button_wndproc);
++
+     toplevels[result].caption = NULL;
+ 
+     update_window_caption(result);
+@@ -264,6 +271,27 @@ static void handle_click(int index)
+     }
+ }
+ 
++static LRESULT WINAPI button_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
++{
++    switch (msg)
++    {
++    case WM_RBUTTONUP:
++    {
++        POINT pt;
++        LONG_PTR id;
++        id = GetWindowLongPtrW(hwnd, GWLP_ID);
++        pt.x = LOWORD(lparam);
++        pt.y = HIWORD(lparam);
++        ClientToScreen(hwnd, &pt);
++        SetForegroundWindow(toplevels[id].hwnd);
++        PostMessageW(toplevels[id].hwnd, WM_POPUPSYSTEMMENU, 0, MAKELONG(pt.x, pt.y));
++        return 0;
++    }
++    }
++    
++    return CallWindowProcW(orig_button_proc, hwnd, msg, wparam, lparam);
++}
++
+ static LRESULT WINAPI tasklist_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+ {
+     switch (msg)
+-- 
+1.5.6.5
+

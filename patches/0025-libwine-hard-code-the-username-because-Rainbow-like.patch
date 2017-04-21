@@ -1,0 +1,50 @@
+From 08288d1d4b44667b3d53e12d799b73c04aa68d20 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Thu, 9 Oct 2008 11:37:20 -0500
+Subject: [PATCH] libwine: hard-code the username because Rainbow likes to change it
+
+---
+ libs/wine/config.c |    8 +++++++-
+ 1 files changed, 7 insertions(+), 1 deletions(-)
+
+diff --git a/libs/wine/config.c b/libs/wine/config.c
+index 26dcc1a..cecf25e 100644
+--- a/libs/wine/config.c
++++ b/libs/wine/config.c
+@@ -45,9 +45,11 @@ static char *datadir;
+ static char *config_dir;
+ static char *server_dir;
+ static char *build_dir;
+-static char *user_name;
+ static char *argv0_name;
+ 
++/* use a constant username because Rainbow likes to change it */
++static const char user_name[] = "sugaruser";
++
+ #ifdef __GNUC__
+ static void fatal_error( const char *err, ... )  __attribute__((noreturn,format(printf,1,2)));
+ static void fatal_perror( const char *err, ... )  __attribute__((noreturn,format(printf,1,2)));
+@@ -176,9 +178,12 @@ static void init_paths(void)
+     struct stat st;
+ 
+     const char *home = getenv( "HOME" );
++#if 0 /* disabled because of rainbow */
+     const char *user = NULL;
++#endif
+     const char *prefix = getenv( "WINEPREFIX" );
+ 
++#if 0 /* disabled because of rainbow */
+ #ifdef HAVE_GETPWUID
+     char uid_str[32];
+     struct passwd *pwd = getpwuid( getuid() );
+@@ -198,6 +203,7 @@ static void init_paths(void)
+         fatal_error( "cannot determine your user name, set the USER environment variable\n" );
+ #endif  /* HAVE_GETPWUID */
+     user_name = xstrdup( user );
++#endif
+ 
+     /* build config_dir */
+ 
+-- 
+1.5.6.5
+

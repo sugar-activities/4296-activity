@@ -1,0 +1,77 @@
+From 586e65c52387f5e3ee0436300a6733a3b0e0a1db Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Tue, 23 Sep 2008 09:24:06 -0500
+Subject: [PATCH] user32: hack to hide minimized window icons
+
+---
+ dlls/user32/winpos.c |   54 +------------------------------------------------
+ 1 files changed, 2 insertions(+), 52 deletions(-)
+
+diff --git a/dlls/user32/winpos.c b/dlls/user32/winpos.c
+index 8aeecc2..a59f722 100644
+--- a/dlls/user32/winpos.c
++++ b/dlls/user32/winpos.c
+@@ -783,58 +783,8 @@ void WINPOS_GetMinMaxInfo( HWND hwnd, POINT *maxSize, POINT *maxPos,
+  */
+ static POINT WINPOS_FindIconPos( HWND hwnd, POINT pt )
+ {
+-    RECT rect, rectParent;
+-    HWND parent, child;
+-    HRGN hrgn, tmp;
+-    int xspacing, yspacing;
+-
+-    parent = GetAncestor( hwnd, GA_PARENT );
+-    GetClientRect( parent, &rectParent );
+-    if ((pt.x >= rectParent.left) && (pt.x + GetSystemMetrics(SM_CXICON) < rectParent.right) &&
+-        (pt.y >= rectParent.top) && (pt.y + GetSystemMetrics(SM_CYICON) < rectParent.bottom))
+-        return pt;  /* The icon already has a suitable position */
+-
+-    xspacing = GetSystemMetrics(SM_CXICONSPACING);
+-    yspacing = GetSystemMetrics(SM_CYICONSPACING);
+-
+-    /* Check if another icon already occupies this spot */
+-    /* FIXME: this is completely inefficient */
+-
+-    hrgn = CreateRectRgn( 0, 0, 0, 0 );
+-    tmp = CreateRectRgn( 0, 0, 0, 0 );
+-    for (child = GetWindow( parent, GW_HWNDFIRST ); child; child = GetWindow( child, GW_HWNDNEXT ))
+-    {
+-        WND *childPtr;
+-        if (child == hwnd) continue;
+-        if ((GetWindowLongW( child, GWL_STYLE ) & (WS_VISIBLE|WS_MINIMIZE)) != (WS_VISIBLE|WS_MINIMIZE))
+-            continue;
+-        if (!(childPtr = WIN_GetPtr( child )) || childPtr == WND_OTHER_PROCESS)
+-            continue;
+-        SetRectRgn( tmp, childPtr->rectWindow.left, childPtr->rectWindow.top,
+-                    childPtr->rectWindow.right, childPtr->rectWindow.bottom );
+-        CombineRgn( hrgn, hrgn, tmp, RGN_OR );
+-        WIN_ReleasePtr( childPtr );
+-    }
+-    DeleteObject( tmp );
+-
+-    for (rect.bottom = rectParent.bottom; rect.bottom >= yspacing; rect.bottom -= yspacing)
+-    {
+-        for (rect.left = rectParent.left; rect.left <= rectParent.right - xspacing; rect.left += xspacing)
+-        {
+-            rect.right = rect.left + xspacing;
+-            rect.top = rect.bottom - yspacing;
+-            if (!RectInRegion( hrgn, &rect ))
+-            {
+-                /* No window was found, so it's OK for us */
+-                pt.x = rect.left + (xspacing - GetSystemMetrics(SM_CXICON)) / 2;
+-                pt.y = rect.top + (yspacing - GetSystemMetrics(SM_CYICON)) / 2;
+-                DeleteObject( hrgn );
+-                return pt;
+-            }
+-        }
+-    }
+-    DeleteObject( hrgn );
+-    pt.x = pt.y = 0;
++    pt.x = GetSystemMetrics(SM_CXVIRTUALSCREEN)+1;
++    pt.y = GetSystemMetrics(SM_CYVIRTUALSCREEN)+1;
+     return pt;
+ }
+ 
+-- 
+1.5.6.5
+

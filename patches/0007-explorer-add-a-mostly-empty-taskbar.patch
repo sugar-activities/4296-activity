@@ -1,0 +1,333 @@
+From fa2a0d640daf5a9abb092ccb7ee07b0ab845c648 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Sat, 9 Aug 2008 11:06:11 -0500
+Subject: [PATCH] explorer: add a mostly empty taskbar
+
+---
+ programs/explorer/Makefile.in        |    3 +-
+ programs/explorer/desktop.c          |    6 +-
+ programs/explorer/explorer_private.h |    3 +-
+ programs/explorer/systray.c          |   31 ++++--
+ programs/explorer/taskbar.c          |  183 ++++++++++++++++++++++++++++++++++
+ 5 files changed, 214 insertions(+), 12 deletions(-)
+ create mode 100644 programs/explorer/taskbar.c
+
+diff --git a/programs/explorer/Makefile.in b/programs/explorer/Makefile.in
+index ceb80a9..e9286af 100644
+--- a/programs/explorer/Makefile.in
++++ b/programs/explorer/Makefile.in
+@@ -12,7 +12,8 @@ C_SRCS = \
+ 	appbar.c \
+ 	desktop.c \
+ 	explorer.c \
+-	systray.c
++	systray.c \
++	taskbar.c
+ 
+ @MAKE_PROG_RULES@
+ 
+diff --git a/programs/explorer/desktop.c b/programs/explorer/desktop.c
+index 67ade26..f5a268a 100644
+--- a/programs/explorer/desktop.c
++++ b/programs/explorer/desktop.c
+@@ -336,7 +336,11 @@ void manage_desktop( WCHAR *arg )
+         SetDeskWallPaper( (LPSTR)-1 );
+         initialize_display_settings( hwnd );
+         initialize_appbar();
+-        initialize_systray();
++
++        if (using_root)
++            initialize_systray(NULL);
++        else
++            initialize_taskbar();
+ 
+         if ((shell32 = LoadLibraryA( "shell32.dll" )) &&
+             (pShellDDEInit = (void *)GetProcAddress( shell32, (LPCSTR)188)))
+diff --git a/programs/explorer/explorer_private.h b/programs/explorer/explorer_private.h
+index 650552b..a20bf80 100644
+--- a/programs/explorer/explorer_private.h
++++ b/programs/explorer/explorer_private.h
+@@ -22,7 +22,8 @@
+ #define __WINE_EXPLORER_PRIVATE_H
+ 
+ extern void manage_desktop( WCHAR *arg );
+-extern void initialize_systray(void);
++extern HWND initialize_systray(HWND parent);
++extern void initialize_taskbar(void);
+ extern void initialize_appbar(void);
+ 
+ #endif  /* __WINE_EXPLORER_PRIVATE_H */
+diff --git a/programs/explorer/systray.c b/programs/explorer/systray.c
+index 9be95bb..35443e2 100644
+--- a/programs/explorer/systray.c
++++ b/programs/explorer/systray.c
+@@ -58,9 +58,10 @@ static unsigned int nb_displayed;
+ static struct icon **displayed;  /* array of currently displayed icons */
+ 
+ static BOOL hide_systray;
++static HWND parent_window;
+ static int icon_cx, icon_cy;
+ 
+-#define MIN_DISPLAYED 8
++#define MIN_DISPLAYED (parent_window?0:8)
+ #define ICON_BORDER  2
+ 
+ /* Retrieves icon record by owner window and ID */
+@@ -539,13 +540,15 @@ static BOOL is_systray_hidden(void)
+     return ret;
+ }
+ 
+-/* this function creates the listener window */
+-void initialize_systray(void)
++/* create a "bare" systray window */
++HWND initialize_systray(HWND parent)
+ {
+     HMODULE x11drv;
+     SIZE size;
+     WNDCLASSEXW class;
+-    static const WCHAR classname[] = {'S','h','e','l','l','_','T','r','a','y','W','n','d',0};
++    const WCHAR * classname;
++    static const WCHAR tray_classname[] = {'S','h','e','l','l','_','T','r','a','y','W','n','d',0};
++    static const WCHAR child_classname[] = {'S','y','s','t','r','a','y',0};
+     static const WCHAR winname[] = {'W','i','n','e',' ','S','y','s','t','e','m',' ','T','r','a','y',0};
+ 
+     if ((x11drv = GetModuleHandleA( "winex11.drv" )))
+@@ -555,6 +558,13 @@ void initialize_systray(void)
+     icon_cy = GetSystemMetrics( SM_CYSMICON ) + 2*ICON_BORDER;
+     hide_systray = is_systray_hidden();
+ 
++    parent_window = parent;
++
++    if (parent_window)
++        classname = child_classname;
++    else
++        classname = tray_classname;
++
+     /* register the systray listener window class */
+     ZeroMemory(&class, sizeof(class));
+     class.cbSize        = sizeof(class);
+@@ -564,24 +574,27 @@ void initialize_systray(void)
+     class.hIcon         = LoadIconW(0, (LPCWSTR)IDI_WINLOGO);
+     class.hCursor       = LoadCursorW(0, (LPCWSTR)IDC_ARROW);
+     class.hbrBackground = (HBRUSH) COLOR_WINDOW;
+-    class.lpszClassName = (WCHAR *) &classname;
++    class.lpszClassName = classname;
+ 
+     if (!RegisterClassExW(&class))
+     {
+         WINE_ERR("Could not register SysTray window class\n");
+-        return;
++        return 0;
+     }
+ 
+     size = get_window_size();
+-    tray_window = CreateWindowW( classname, winname, WS_OVERLAPPED | WS_CAPTION,
+-                                 CW_USEDEFAULT, CW_USEDEFAULT, size.cx, size.cy, 0, 0, 0, 0 );
++    tray_window = CreateWindowW( classname, winname, parent_window ? WS_CHILD : WS_OVERLAPPED | WS_CAPTION,
++                                 CW_USEDEFAULT, CW_USEDEFAULT, size.cx, size.cy, parent_window, 0, 0, 0 );
+     if (!tray_window)
+     {
+         WINE_ERR("Could not create tray window\n");
+-        return;
++        return 0;
+     }
+ 
+     if (hide_systray) do_hide_systray();
+ 
+     SetTimer( tray_window, 1, 2000, NULL );
++    
++    return tray_window;
+ }
++
+diff --git a/programs/explorer/taskbar.c b/programs/explorer/taskbar.c
+new file mode 100644
+index 0000000..dd388c1
+--- /dev/null
++++ b/programs/explorer/taskbar.c
+@@ -0,0 +1,183 @@
++/*
++ * Copyright (C) 2008 Vincent Povirk
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#define UNICODE
++#include <windows.h>
++#include "wine/debug.h"
++#include "explorer_private.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(explorer);
++
++UINT_PTR (WINAPI *pSHAppBarMessage)(DWORD,PAPPBARDATA);
++
++#define MSG_APPBAR WM_USER
++
++#define TASKBAR_HEIGHT 25
++
++static HWND taskbar_window;
++static HWND systray_window;
++
++static void taskbar_setpos(void)
++{
++    APPBARDATA abd;
++    
++    /* ask for an acceptable rect */
++    ZeroMemory(&abd, sizeof(abd));
++    abd.cbSize = sizeof(abd);
++    abd.hWnd = taskbar_window;
++    abd.uEdge = ABE_BOTTOM;
++    abd.rc.left = 0;
++    abd.rc.right = GetSystemMetrics(SM_CXSCREEN);
++    abd.rc.bottom = GetSystemMetrics(SM_CYSCREEN);
++    abd.rc.top = abd.rc.bottom - TASKBAR_HEIGHT;
++    pSHAppBarMessage(ABM_QUERYPOS, &abd);
++    
++    /* actually reserve a rect that has the correct height if QUERYPOS moved the bottom */
++    abd.rc.top = abd.rc.bottom - TASKBAR_HEIGHT;
++    pSHAppBarMessage(ABM_SETPOS, &abd);
++    
++    MoveWindow(taskbar_window, abd.rc.left, abd.rc.top, abd.rc.right-abd.rc.left, abd.rc.bottom-abd.rc.top, TRUE);
++    
++    /* FIXME: adjust child positions */
++}
++
++static LRESULT WINAPI taskbar_wndproc( HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
++{
++    APPBARDATA abd;
++
++    switch (msg)
++    {
++    case WM_COPYDATA:
++        return SendMessageW(systray_window, msg, wparam, lparam);
++
++    case WM_CLOSE:
++        /* FIXME: does this even make sense? */
++        ShowWindow( hwnd, SW_HIDE );
++        return 0;
++
++    case MSG_APPBAR:
++        switch(wparam)
++        {
++        case ABN_POSCHANGED:
++            taskbar_setpos();
++            break;
++        case ABN_FULLSCREENAPP:
++            SetWindowPos(hwnd, lparam?HWND_BOTTOM:HWND_TOP, 0, 0, 0, 0, SWP_NOSIZE|SWP_NOMOVE);
++            break;
++        case ABN_STATECHANGE:
++            break;
++        default:
++            WINE_FIXME("appbar notification wparam=%x, lparam=%x\n", (unsigned int)wparam, (unsigned int)lparam);
++        }
++        break;
++
++#if 0
++    /* MSDN says we should send notification of these messages, but they would
++        cause FIXME's to be printed whenever a virtual desktop is used */
++    case WM_WINDOWPOSCHANGED:
++        abd.cbSize = sizeof(abd);
++        abd.hWnd = hwnd;
++        pSHAppBarMessage(ABM_WINDOWPOSCHANGED, &abd);
++        break;
++
++    case WM_ACTIVATE:
++        abd.cbSize = sizeof(abd);
++        abd.hWnd = hwnd;
++        pSHAppBarMessage(ABM_ACTIVATE, &abd);
++        break;
++#endif
++
++    case WM_DESTROY:
++        abd.cbSize = sizeof(abd);
++        abd.hWnd = hwnd;
++        pSHAppBarMessage(ABM_REMOVE, &abd);
++        break;
++    }
++    return DefWindowProcW( hwnd, msg, wparam, lparam );
++}
++
++/* create a taskbar, and put the systray inside it */
++void initialize_taskbar(void)
++{
++    WNDCLASSEXW class;
++    APPBARDATA abd;
++    HMODULE hshell32;
++    static const WCHAR classname[] = {'S','h','e','l','l','_','T','r','a','y','W','n','d',0};
++    static const WCHAR winname[] = {'W','i','n','e',' ','T','a','s','k','b','a','r',0};
++
++    /* FIXME: what if (is_systray_hidden()) ? */
++
++    hshell32 = LoadLibraryA("shell32.dll");
++    if (!hshell32)
++    {
++        WINE_ERR("Couldn't load shell32.dll\n");
++        return;
++    }
++
++    pSHAppBarMessage = (void *)GetProcAddress(hshell32, "SHAppBarMessage");
++    if (!pSHAppBarMessage)
++    {
++        WINE_ERR("Couldn't load SHAppBarMessage symbol\n");
++        return;
++    }
++
++    /* register the taskbar window class */
++    ZeroMemory(&class, sizeof(class));
++    class.cbSize        = sizeof(class);
++    class.style         = CS_DBLCLKS;
++    class.lpfnWndProc   = taskbar_wndproc;
++    class.hInstance     = NULL;
++    class.hIcon         = LoadIconW(0, (LPCWSTR)IDI_WINLOGO);
++    class.hCursor       = LoadCursorW(0, (LPCWSTR)IDC_ARROW);
++    class.hbrBackground = (HBRUSH) COLOR_WINDOW;
++    class.lpszClassName = (WCHAR *) &classname;
++
++    if (!RegisterClassExW(&class))
++    {
++        WINE_ERR("Could not register Taskbar window class\n");
++        return;
++    }
++
++    /* create the taskbar */
++    taskbar_window = CreateWindowExW( WS_EX_TOOLWINDOW, classname, winname,
++        WS_BORDER|WS_POPUP|WS_CLIPCHILDREN, 0, 0, 0, 0, 0, 0, 0, 0 );
++    if (!taskbar_window)
++    {
++        WINE_ERR("Could not create taskbar window\n");
++        return;
++    }
++    
++    abd.cbSize = sizeof(abd);
++    abd.hWnd = taskbar_window;
++    abd.uCallbackMessage = MSG_APPBAR;
++    if (!pSHAppBarMessage(ABM_NEW, &abd))
++    {
++        WINE_ERR("Couldn't register taskbar as an appbar.\n");
++        DestroyWindow(taskbar_window);
++        taskbar_window = NULL;
++        return;
++    }
++
++    systray_window = initialize_systray(taskbar_window);
++
++    taskbar_setpos();
++    ShowWindow(systray_window, SW_SHOW);
++    ShowWindow(taskbar_window, SW_SHOW);
++}
++
++
+-- 
+1.5.6.5
+

@@ -1,0 +1,27 @@
+From 54bbf3c0c6464d874c24589aeb21a3677eda43a2 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Fri, 17 Oct 2008 15:51:52 -0500
+Subject: [PATCH] explorer: stay out of the sugar "hot corners"
+
+---
+ programs/explorer/taskbar.c |    4 ++--
+ 1 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/programs/explorer/taskbar.c b/programs/explorer/taskbar.c
+index 040e774..cc60088 100644
+--- a/programs/explorer/taskbar.c
++++ b/programs/explorer/taskbar.c
+@@ -66,8 +66,8 @@ static void taskbar_setpos(void)
+     abd.cbSize = sizeof(abd);
+     abd.hWnd = taskbar_window;
+     abd.uEdge = ABE_BOTTOM;
+-    abd.rc.left = 0;
+-    abd.rc.right = GetSystemMetrics(SM_CXSCREEN);
++    abd.rc.left = GetSystemMetrics(SM_CXSCREEN) / 16;
++    abd.rc.right = GetSystemMetrics(SM_CXSCREEN) * 15 / 16;
+     abd.rc.bottom = GetSystemMetrics(SM_CYSCREEN);
+     abd.rc.top = abd.rc.bottom - height;
+     SHAppBarMessage(ABM_QUERYPOS, &abd);
+-- 
+1.5.6.5
+

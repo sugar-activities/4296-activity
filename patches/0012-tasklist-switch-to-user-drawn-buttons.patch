@@ -1,0 +1,82 @@
+From 8259a75c02c0fe4603cb167112212bde6f03515c Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Fri, 29 Aug 2008 14:59:05 -0500
+Subject: [PATCH] tasklist: switch to user-drawn buttons
+
+---
+ programs/explorer/tasklist.c |   39 +++++++++++++++++++++++++++++++++++++--
+ 1 files changed, 37 insertions(+), 2 deletions(-)
+
+diff --git a/programs/explorer/tasklist.c b/programs/explorer/tasklist.c
+index a244165..af8359b 100644
+--- a/programs/explorer/tasklist.c
++++ b/programs/explorer/tasklist.c
+@@ -88,13 +88,15 @@ static void update_window_caption(int index)
+     int length;
+     LPWSTR caption;
+ 
++    HeapFree(GetProcessHeap(), 0, toplevels[index].caption);
++
+     length = GetWindowTextLengthW(toplevels[index].hwnd);
+ 
+     caption = HeapAlloc(GetProcessHeap(), 0, (length+1)*sizeof(WCHAR));
+     if (length == 0 || !GetWindowTextW(toplevels[index].hwnd, caption, length+1))
+         caption[0] = 0;
+ 
+-    SetWindowTextW(toplevels[index].button, caption);
++    toplevels[index].caption = caption;
+ }
+ 
+ /* add a window to the list and return its index */
+@@ -117,7 +119,7 @@ static int add_hwnd(HWND hwnd)
+     toplevels_len++;
+     toplevels[result].hwnd = hwnd;
+ 
+-    toplevels[result].button = CreateWindowW(buttonW, buttonW, WS_VISIBLE|WS_CHILD|BS_PUSHBUTTON|BS_LEFT, 0, 0, 0, 0, tasklist, (HMENU)result, NULL, NULL);
++    toplevels[result].button = CreateWindowW(buttonW, buttonW, WS_VISIBLE|WS_CHILD|BS_PUSHBUTTON|BS_LEFT|BS_OWNERDRAW, 0, 0, 0, 0, tasklist, (HMENU)result, NULL, NULL);
+ 
+     orig_button_proc = (WNDPROC)SetWindowLongPtrW(toplevels[result].button, GWLP_WNDPROC, (LONG_PTR)button_wndproc);
+ 
+@@ -310,6 +312,39 @@ static LRESULT WINAPI tasklist_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
+                 break;
+             }
+             break;
++        case WM_DRAWITEM:
++        {
++            int id = (int)wparam;
++            DRAWITEMSTRUCT* dis=(DRAWITEMSTRUCT*)lparam;
++            RECT rc;
++            BOOL pushed;
++            LOGFONTA lf;
++            HFONT font, oldFont;
++            
++            pushed = SendMessageW(dis->hwndItem, BM_GETSTATE, 0, 0) & BST_PUSHED;
++            
++            DrawFrameControl(dis->hDC, &dis->rcItem, DFC_BUTTON, DFCS_BUTTONPUSH|(pushed?DFCS_PUSHED:0));
++            
++            rc = dis->rcItem;
++            
++            InflateRect(&rc, -3, -3);
++            if (pushed)
++                OffsetRect(&rc, 1, 1);
++            
++            ZeroMemory(&lf, sizeof(lf));
++            lf.lfHeight = -12;
++            lf.lfWeight = FW_NORMAL;
++            lf.lfPitchAndFamily = DEFAULT_PITCH|FF_SWISS;
++            strcpy(lf.lfFaceName, "Arial");
++            font = CreateFontIndirectA(&lf);
++            
++            oldFont = SelectObject(dis->hDC, font);
++            DrawTextW(dis->hDC, toplevels[id].caption, -1, &rc, DT_LEFT|DT_TOP|DT_SINGLELINE|DT_WORD_ELLIPSIS);
++            SelectObject(dis->hDC, oldFont);
++            
++            DeleteObject(font);
++        }
++        break;
+     }
+ 
+     return DefWindowProcW(hwnd, msg, wparam, lparam);
+-- 
+1.5.6.5
+

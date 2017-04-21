@@ -1,0 +1,63 @@
+From 1f2af618582090eb3fbe907019e598c47b528c78 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Tue, 21 Oct 2008 13:22:53 -0500
+Subject: [PATCH] explorer: add Run command to the start menu
+
+---
+ programs/explorer/startmenu.c |   26 +++++++++++++++++++++++++-
+ 1 files changed, 25 insertions(+), 1 deletions(-)
+
+diff --git a/programs/explorer/startmenu.c b/programs/explorer/startmenu.c
+index fcf9935..a9d6a05 100644
+--- a/programs/explorer/startmenu.c
++++ b/programs/explorer/startmenu.c
+@@ -399,6 +399,20 @@ static void exit_windows()
+     ExitWindows(0, 0);
+ }
+ 
++static void run_dialog()
++{
++    void WINAPI (*pRunFileDlg)(HWND hWndOwner, HICON hIcon, LPCSTR lpszDir,
++                               LPCSTR lpszTitle, LPCSTR lpszDesc, DWORD dwFlags);
++    HMODULE hShell32;
++    
++    hShell32 = LoadLibraryA("shell32");
++    pRunFileDlg = (void*)GetProcAddress(hShell32, (LPCSTR)61);
++    
++    pRunFileDlg(NULL, NULL, NULL, NULL, NULL, 0);
++    
++    FreeLibrary(hShell32);
++}
++
+ static void destroy_menus()
+ {
+     if (!topmenu)
+@@ -515,7 +529,8 @@ void do_startmenu(HWND hwnd, HWND button)
+     RECT rc={0,0,0,0};
+     TPMPARAMS tpm;
+     static WCHAR Exit[] = {'E','x','i','t',0};
+-    LPWSTR exit_str;
++    static WCHAR Run[] = {'R','u','n','.','.','.',0};
++    LPWSTR exit_str, run_str;
+ 
+     /* FIXME: Our existing menu is never destroyed if the user makes no 
+         selection. It seems to be impossible to detect this situation. */
+@@ -556,6 +571,15 @@ void do_startmenu(HWND hwnd, HWND button)
+     /* separator */
+     AppendMenuW(topmenu, MF_SEPARATOR, 0, NULL);
+     
++    /* since we'll be using LoadString for this, the "Run" caption will be
++        heap-allocated; for now I just make a copy of the string */
++    run_str = HeapAlloc(GetProcessHeap(), 0, sizeof(WCHAR) * (strlenW(Run)+1));
++    strcpyW(run_str, Run);
++    add_special_item(NULL, NULL, run_str, run_dialog, NULL, hwnd);
++    
++    /* separator */
++    AppendMenuW(topmenu, MF_SEPARATOR, 0, NULL);
++    
+     /* since we'll be using LoadString for this, the "Exit" caption will be
+         heap-allocated; for now I just make a copy of the string */
+     exit_str = HeapAlloc(GetProcessHeap(), 0, sizeof(WCHAR) * (strlenW(Exit)+1));
+-- 
+1.5.6.5
+

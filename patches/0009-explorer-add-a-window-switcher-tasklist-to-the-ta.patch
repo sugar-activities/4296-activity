@@ -1,0 +1,510 @@
+From 824658054203418501c615428cb03c3e5b75b5b3 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Mon, 25 Aug 2008 08:39:06 -0500
+Subject: [PATCH] explorer: add a window switcher (tasklist) to the taskbar
+
+---
+ programs/explorer/Makefile.in        |    3 +-
+ programs/explorer/desktop.c          |    3 +
+ programs/explorer/explorer_private.h |    7 +-
+ programs/explorer/systray.c          |   14 +-
+ programs/explorer/taskbar.c          |   17 ++-
+ programs/explorer/tasklist.c         |  339 ++++++++++++++++++++++++++++++++++
+ 6 files changed, 373 insertions(+), 10 deletions(-)
+ create mode 100644 programs/explorer/tasklist.c
+
+diff --git a/programs/explorer/Makefile.in b/programs/explorer/Makefile.in
+index f2fc10a..99500b9 100644
+--- a/programs/explorer/Makefile.in
++++ b/programs/explorer/Makefile.in
+@@ -14,7 +14,8 @@ C_SRCS = \
+ 	explorer.c \
+ 	startmenu.c \
+ 	systray.c \
+-	taskbar.c
++	taskbar.c \
++	tasklist.c
+ 
+ @MAKE_PROG_RULES@
+ 
+diff --git a/programs/explorer/desktop.c b/programs/explorer/desktop.c
+index f5a268a..3741315 100644
+--- a/programs/explorer/desktop.c
++++ b/programs/explorer/desktop.c
+@@ -379,6 +379,9 @@ void manage_desktop( WCHAR *arg )
+         while (GetMessageW( &msg, 0, 0, 0 )) DispatchMessageW( &msg );
+         WINE_TRACE( "desktop message loop exiting for hwnd %p\n", hwnd );
+     }
++    
++    if (using_root)
++        finalize_taskbar();
+ 
+     ExitProcess( 0 );
+ }
+diff --git a/programs/explorer/explorer_private.h b/programs/explorer/explorer_private.h
+index 22bc009..c6f3b09 100644
+--- a/programs/explorer/explorer_private.h
++++ b/programs/explorer/explorer_private.h
+@@ -23,9 +23,14 @@
+ 
+ extern void manage_desktop( WCHAR *arg );
+ extern HWND initialize_systray(HWND parent);
+-extern void initialize_taskbar(void);
+ extern void initialize_appbar(void);
++
++extern void initialize_taskbar(void);
++extern void finalize_taskbar(void);
++
+ extern void do_startmenu(HWND hwnd, HWND button);
+ extern LRESULT handle_menu(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
++extern HWND initialize_tasklist(HWND parent);
++extern void finalize_tasklist(void);
+ 
+ #endif  /* __WINE_EXPLORER_PRIVATE_H */
+diff --git a/programs/explorer/systray.c b/programs/explorer/systray.c
+index 35443e2..546b175 100644
+--- a/programs/explorer/systray.c
++++ b/programs/explorer/systray.c
+@@ -61,7 +61,7 @@ static BOOL hide_systray;
+ static HWND parent_window;
+ static int icon_cx, icon_cy;
+ 
+-#define MIN_DISPLAYED (parent_window?0:8)
++#define MIN_DISPLAYED 8
+ #define ICON_BORDER  2
+ 
+ /* Retrieves icon record by owner window and ID */
+@@ -84,9 +84,13 @@ static SIZE get_window_size(void)
+ 
+     rect.left = 0;
+     rect.top = 0;
+-    rect.right = icon_cx * max( nb_displayed, MIN_DISPLAYED );
++    if (parent_window)
++        rect.right = icon_cy * nb_displayed;
++    else
++        rect.right = icon_cx * max( nb_displayed, MIN_DISPLAYED );
+     rect.bottom = icon_cy;
+-    AdjustWindowRect( &rect, WS_CAPTION, FALSE );
++    if (!parent_window)
++        AdjustWindowRect( &rect, WS_CAPTION, FALSE );
+     size.cx = rect.right - rect.left;
+     size.cy = rect.bottom - rect.top;
+     return size;
+@@ -204,7 +208,7 @@ static BOOL show_icon(struct icon *icon)
+     update_tooltip_position( icon );
+     invalidate_icons( nb_displayed-1, nb_displayed-1 );
+ 
+-    if (nb_displayed > MIN_DISPLAYED)
++    if (parent_window || nb_displayed > MIN_DISPLAYED)
+     {
+         SIZE size = get_window_size();
+         SetWindowPos( tray_window, 0, 0, 0, size.cx, size.cy, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE );
+@@ -238,7 +242,7 @@ static BOOL hide_icon(struct icon *icon)
+     invalidate_icons( icon->display, nb_displayed );
+     icon->display = -1;
+ 
+-    if (nb_displayed >= MIN_DISPLAYED)
++    if (parent_window || nb_displayed >= MIN_DISPLAYED)
+     {
+         SIZE size = get_window_size();
+         SetWindowPos( tray_window, 0, 0, 0, size.cx, size.cy, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE );
+diff --git a/programs/explorer/taskbar.c b/programs/explorer/taskbar.c
+index aa443d6..0a7becf 100644
+--- a/programs/explorer/taskbar.c
++++ b/programs/explorer/taskbar.c
+@@ -30,6 +30,7 @@ WINE_DEFAULT_DEBUG_CHANNEL(explorer);
+ 
+ static HWND taskbar_window;
+ static HWND systray_window;
++static HWND tasklist_window;
+ static HWND startbutton;
+ 
+ static void taskbar_setpos(void)
+@@ -62,6 +63,8 @@ static void taskbar_setpos(void)
+     GetWindowRect(systray_window, &rc);
+     
+     SetWindowPos(systray_window, HWND_TOP, abd.rc.right - abd.rc.left - (rc.right - rc.left), 1, 0, 0, SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
++    
++    MoveWindow(tasklist_window, 76, 1, abd.rc.right - abd.rc.left - (rc.right - rc.left) - 80, 24, TRUE);
+ }
+ 
+ static LRESULT WINAPI taskbar_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+@@ -196,19 +199,27 @@ void initialize_taskbar(void)
+ 
+     systray_window = initialize_systray(taskbar_window);
+ 
+-    taskbar_setpos();
+-    
+     initcomctl.dwSize = sizeof(initcomctl);
+     initcomctl.dwICC = ICC_STANDARD_CLASSES;
+     InitCommonControlsEx(&initcomctl);
+-    
++
+     /* FIXME: make the caption translateable */
+     startbutton = CreateWindowA( "Button", "Start", WS_CHILD|BS_PUSHBUTTON, 0, 1, 72, 24,
+         taskbar_window, 0, 0, 0);
+ 
++    tasklist_window = initialize_tasklist(taskbar_window);
++
++    taskbar_setpos();
++
+     ShowWindow(systray_window, SW_SHOW);
+     ShowWindow(startbutton, SW_SHOW);
+     ShowWindow(taskbar_window, SW_SHOW);
+ }
+ 
++void finalize_taskbar(void)
++{
++    finalize_tasklist();
++
++    DestroyWindow(taskbar_window);
++}
+ 
+diff --git a/programs/explorer/tasklist.c b/programs/explorer/tasklist.c
+new file mode 100644
+index 0000000..3aca53b
+--- /dev/null
++++ b/programs/explorer/tasklist.c
+@@ -0,0 +1,339 @@
++/*
++ * Copyright (C) 2008 Vincent Povirk for CodeWeavers
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#define UNICODE
++#include <windows.h>
++#include <commctrl.h>
++#include <wine/debug.h>
++
++WINE_DEFAULT_DEBUG_CHANNEL(explorer);
++
++static HWND tasklist;
++
++static WCHAR classname[] = {'t','a','s','k','l','i','s','t',0};
++
++struct toplevel_window
++{
++    HWND hwnd;
++    BOOL still_alive;
++    HWND button;
++    LPWSTR caption;
++};
++
++static struct toplevel_window *toplevels=NULL;
++static int toplevels_len = 0; /* number of top-level windows in toplevels[] */
++static int toplevels_size = 0; /* amount of allocated memory in toplevels[] */
++
++HWND foreground;
++
++#define MAX_BUTTON_WIDTH 150
++static int button_width = 0;
++
++/* get the index of a window in the toplevels list; this can change */
++static int get_toplevel(HWND hwnd)
++{
++    int i;
++
++    for (i=0; i<toplevels_len; i++)
++    {
++        if (toplevels[i].hwnd == hwnd)
++            return i;
++    }
++
++    return -1;
++}
++
++static void refresh_buttons(void)
++{
++    int i;
++    RECT rc;
++
++    if (toplevels_len == 0)
++        return;
++
++    GetWindowRect(tasklist, &rc);
++
++    button_width = min(MAX_BUTTON_WIDTH, (rc.right - rc.left) / toplevels_len);
++
++    for (i=0; i<toplevels_len; i++)
++    {
++        SetWindowLongPtrW(toplevels[i].button, GWLP_ID, i);
++
++        MoveWindow(toplevels[i].button, button_width*i, 0, button_width, (rc.bottom - rc.top), TRUE);
++    }
++}
++
++static void update_window_caption(int index)
++{
++    int length;
++    LPWSTR caption;
++
++    length = GetWindowTextLengthW(toplevels[index].hwnd);
++
++    caption = HeapAlloc(GetProcessHeap(), 0, (length+1)*sizeof(WCHAR));
++    if (length == 0 || !GetWindowTextW(toplevels[index].hwnd, caption, length+1))
++        caption[0] = 0;
++
++    SetWindowTextW(toplevels[index].button, caption);
++}
++
++/* add a window to the list and return its index */
++static int add_hwnd(HWND hwnd)
++{
++    int result;
++    static const WCHAR buttonW[] = {'B','u','t','t','o','n',0};
++
++    if (toplevels_len == toplevels_size)
++    {
++        toplevels = HeapReAlloc(GetProcessHeap(), 0, toplevels, sizeof(struct toplevel_window)*toplevels_size+10);
++        if (!toplevels)
++            WINE_ERR("Out of memory\n");
++        toplevels_size = HeapSize(GetProcessHeap(), 0, toplevels) / sizeof(struct toplevel_window);
++    }
++
++    WINE_TRACE("adding %p to task list\n", hwnd);
++
++    result = toplevels_len;
++    toplevels_len++;
++    toplevels[result].hwnd = hwnd;
++
++    toplevels[result].button = CreateWindowW(buttonW, buttonW, WS_VISIBLE|WS_CHILD|BS_PUSHBUTTON|BS_LEFT, 0, 0, 0, 0, tasklist, (HMENU)result, NULL, NULL);
++
++    toplevels[result].caption = NULL;
++
++    update_window_caption(result);
++
++    refresh_buttons();
++
++    return result;
++}
++
++/* Called before a window is removed from the list.
++ * 
++ * If several windows are being removed at once, the structure at *toplevel may
++ * not be at the given index in toplevels. The index given is where it would be
++ * just before it is removed if we were removing each item individually.
++ */
++static void removing_window(int index, struct toplevel_window* toplevel)
++{
++    WINE_TRACE("removing %p from task list\n", toplevel->hwnd);
++
++    DestroyWindow(toplevel->button);
++
++    HeapFree(GetProcessHeap(), 0, toplevel->caption);
++}
++
++#if 0
++static void del_window(int window)
++{
++    removing_window(window);
++
++    toplevels_len--;
++
++    if (toplevels_len != window)
++        MoveMemory(&toplevels[window], &toplevels[window+1], sizeof(struct toplevel_window) * (toplevels_len - window));
++}
++#endif
++
++static void cull_windows()
++{
++    int i, j;
++    BOOL needs_refresh=FALSE;
++
++    j=0;
++    for (i=0; i<toplevels_len; i++)
++    {
++        if (toplevels[i].still_alive)
++        {
++            if (i != j)
++                CopyMemory(&toplevels[j], &toplevels[i], sizeof(struct toplevel_window));
++
++            j++;
++        }
++        else
++        {
++            removing_window(j, &toplevels[i]);
++            needs_refresh = TRUE;
++        }
++    }
++
++    toplevels_len = j;
++    
++    if (needs_refresh)
++        refresh_buttons();
++}
++
++static void foreground_changed(HWND new_foreground)
++{
++    int i;
++
++    i = get_toplevel(foreground);
++    if (i != -1)
++        SendMessageW(toplevels[i].button, BM_SETSTATE, (WPARAM)BST_UNCHECKED, 0);
++
++    i = get_toplevel(new_foreground);
++    if (i != -1)
++        SendMessageW(toplevels[i].button, BM_SETSTATE, (WPARAM)BST_PUSHED, 0);
++
++    foreground = new_foreground;
++}
++
++static BOOL CALLBACK handle_enumwindow(HWND hwnd, LPARAM lparam)
++{
++    int window;
++    WINDOWINFO wi;
++
++    if (GetWindow(hwnd, GW_OWNER))
++        return TRUE;
++
++    wi.cbSize = sizeof(wi);
++    if (!GetWindowInfo(hwnd, &wi))
++        return TRUE;
++
++    if (wi.dwExStyle & WS_EX_TOOLWINDOW || !(wi.dwStyle & WS_VISIBLE))
++        return TRUE;
++
++    if ((window = get_toplevel(hwnd)) == -1)
++    {
++        window = add_hwnd(hwnd);
++    }
++    else
++    {
++        update_window_caption(window);
++    }
++    
++    toplevels[window].still_alive = TRUE;
++
++    return TRUE;
++}
++
++/* update the window list using a blunt object */
++static void do_polling(void)
++{
++    int i;
++    HWND new_foreground, parent;
++
++    /* mark all top-level windows as dead */
++    for (i=0; i<toplevels_len; i++)
++        toplevels[i].still_alive = FALSE;
++
++    /* mark the alive ones as still alive, and add any new ones */
++    EnumWindows(handle_enumwindow, 0);
++
++    /* remove dead windows */
++    cull_windows();
++
++    new_foreground = GetForegroundWindow();
++    while ((parent = GetParent(new_foreground)))
++        new_foreground = parent;
++    if (foreground != new_foreground)
++        foreground_changed(new_foreground);
++}
++
++static void handle_click(int index)
++{
++    HWND hwnd=toplevels[index].hwnd;
++    LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
++
++    if (hwnd == foreground && !(style & WS_MINIMIZE))
++    {
++        ShowWindow(hwnd, SW_SHOWMINNOACTIVE); /* MSDN suggests that SW_FORCEMINIMIZE is
++            more appropriate, but it seems to make them vanish on Windows.. */
++        foreground_changed(0);
++    }
++    else
++    {
++        SetForegroundWindow(hwnd);
++        if (style & WS_MAXIMIZE)
++            ShowWindow(hwnd, SW_SHOWMAXIMIZED);
++        else
++            ShowWindow(hwnd, SW_SHOWNORMAL);
++        foreground_changed(hwnd);
++    }
++}
++
++static LRESULT WINAPI tasklist_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
++{
++    switch (msg)
++    {
++        case WM_TIMER:
++            do_polling();
++            return 0;
++        case WM_SIZE:
++            refresh_buttons();
++            return 0;
++        case WM_COMMAND:
++            switch (HIWORD(wparam))
++            {
++            case BN_CLICKED:
++                handle_click(LOWORD(wparam));
++                break;
++            }
++            break;
++    }
++
++    return DefWindowProcW(hwnd, msg, wparam, lparam);
++}
++
++HWND initialize_tasklist(HWND parent)
++{
++    WNDCLASSEXW class;
++
++    ZeroMemory(&class, sizeof(class));
++    class.cbSize        = sizeof(class);
++    class.style         = CS_DBLCLKS;
++    class.lpfnWndProc   = tasklist_wndproc;
++    class.hInstance     = NULL;
++    class.hIcon         = LoadIconW(0, (LPCWSTR)IDI_WINLOGO);
++    class.hCursor       = LoadCursorW(0, (LPCWSTR)IDC_ARROW);
++    class.hbrBackground = (HBRUSH) COLOR_WINDOW;
++    class.lpszClassName = (WCHAR *) &classname;
++
++    if (!RegisterClassExW(&class))
++    {
++        WINE_ERR("Couldn't register tasklist class\n");
++        return NULL;
++    }
++
++    tasklist = CreateWindowExW(0, classname, classname, WS_CHILD|WS_VISIBLE, 73, 1, 100, 24, parent, NULL, NULL, NULL);
++    if (!tasklist)
++    {
++        WINE_ERR("Couldn't create tasklist window\n");
++        return NULL;
++    }
++
++    toplevels = HeapAlloc(GetProcessHeap(), 0, sizeof(struct toplevel_window)*10);
++    if (!toplevels)
++    {
++        WINE_ERR("Out of memory\n");
++        return NULL;
++    }
++    toplevels_size = HeapSize(GetProcessHeap(), 0, toplevels) / sizeof(struct toplevel_window);
++
++    SetTimer(tasklist, 0, 1500, NULL);
++
++    return tasklist;
++}
++
++void finalize_tasklist(void)
++{
++    DestroyWindow(tasklist);
++
++    HeapFree(GetProcessHeap(), 0, toplevels);
++}
++
+-- 
+1.5.6.5
+

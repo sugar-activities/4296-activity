@@ -1,0 +1,256 @@
+From 91aa0d38403a2266f8a2dde0a841ea2ba23435bd Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Wed, 24 Sep 2008 11:40:57 -0500
+Subject: [PATCH] hack to make SPI_SETWORKAREA work in virtual desktop mode
+
+---
+ dlls/user32/driver.c              |   12 +++++++++++
+ dlls/user32/sysparams.c           |   23 +++++++--------------
+ dlls/user32/user_private.h        |    1 +
+ dlls/winex11.drv/desktop.c        |    2 +-
+ dlls/winex11.drv/event.c          |    5 ++++
+ dlls/winex11.drv/winex11.drv.spec |    1 +
+ dlls/winex11.drv/x11drv.h         |    1 +
+ dlls/winex11.drv/x11drv_main.c    |    7 ++++++
+ dlls/winex11.drv/xinerama.c       |   39 +++++++++++++++++++++++++++++++++++++
+ 9 files changed, 75 insertions(+), 16 deletions(-)
+
+diff --git a/dlls/user32/driver.c b/dlls/user32/driver.c
+index 6454f65..6f8b0c9 100644
+--- a/dlls/user32/driver.c
++++ b/dlls/user32/driver.c
+@@ -104,6 +104,7 @@ static const USER_DRIVER *load_driver(void)
+         GET_USER_FUNC(EnumDisplayMonitors);
+         GET_USER_FUNC(EnumDisplaySettingsEx);
+         GET_USER_FUNC(GetMonitorInfo);
++        GET_USER_FUNC(SetWorkArea);
+         GET_USER_FUNC(CreateDesktopWindow);
+         GET_USER_FUNC(CreateWindow);
+         GET_USER_FUNC(DestroyWindow);
+@@ -312,6 +313,10 @@ static BOOL CDECL nulldrv_GetMonitorInfo( HMONITOR handle, LPMONITORINFO info )
+     return FALSE;
+ }
+ 
++static void CDECL nulldrv_SetWorkArea( RECT *rc )
++{
++}
++
+ static BOOL CDECL nulldrv_CreateDesktopWindow( HWND hwnd )
+ {
+     return TRUE;
+@@ -464,6 +469,7 @@ static USER_DRIVER null_driver =
+     nulldrv_EnumDisplayMonitors,
+     nulldrv_EnumDisplaySettingsEx,
+     nulldrv_GetMonitorInfo,
++    nulldrv_SetWorkArea,
+     /* windowing functions */
+     nulldrv_CreateDesktopWindow,
+     nulldrv_CreateWindow,
+@@ -657,6 +663,11 @@ static BOOL CDECL loaderdrv_GetMonitorInfo( HMONITOR handle, LPMONITORINFO info
+     return load_driver()->pGetMonitorInfo( handle, info );
+ }
+ 
++static void CDECL loaderdrv_SetWorkArea( RECT *rc )
++{
++    load_driver()->pSetWorkArea( rc );
++}
++
+ static BOOL CDECL loaderdrv_CreateDesktopWindow( HWND hwnd )
+ {
+     return load_driver()->pCreateDesktopWindow( hwnd );
+@@ -805,6 +816,7 @@ static USER_DRIVER lazy_load_driver =
+     loaderdrv_EnumDisplayMonitors,
+     loaderdrv_EnumDisplaySettingsEx,
+     loaderdrv_GetMonitorInfo,
++    loaderdrv_SetWorkArea,
+     /* windowing functions */
+     loaderdrv_CreateDesktopWindow,
+     loaderdrv_CreateWindow,
+diff --git a/dlls/user32/sysparams.c b/dlls/user32/sysparams.c
+index 94757a3..2af2535 100644
+--- a/dlls/user32/sysparams.c
++++ b/dlls/user32/sysparams.c
+@@ -305,7 +305,6 @@ static UINT double_click_width = 4;
+ static UINT double_click_height = 4;
+ static UINT double_click_time = 500;
+ static BOOL drag_full_windows = FALSE;
+-static RECT work_area;
+ static BOOL keyboard_pref = TRUE;
+ static BOOL screen_reader = FALSE;
+ static UINT mouse_hover_width = 4;
+@@ -1753,9 +1752,8 @@ BOOL WINAPI SystemParametersInfoW( UINT uiAction, UINT uiParam,
+     {
+         if (!pvParam) return FALSE;
+ 
+-        spi_idx = SPI_SETWORKAREA_IDX;
+-        CopyRect( &work_area, pvParam );
+-        spi_loaded[spi_idx] = TRUE;
++        USER_Driver->pSetWorkArea( (RECT*)pvParam );
++
+         break;
+     }
+ 
+@@ -1763,17 +1761,12 @@ BOOL WINAPI SystemParametersInfoW( UINT uiAction, UINT uiParam,
+     {
+         if (!pvParam) return FALSE;
+ 
+-        spi_idx = SPI_SETWORKAREA_IDX;
+-        if (!spi_loaded[spi_idx])
+-        {
+-            SetRect( &work_area, 0, 0,
+-                     GetSystemMetrics( SM_CXSCREEN ),
+-                     GetSystemMetrics( SM_CYSCREEN ) );
+-            EnumDisplayMonitors( 0, NULL, enum_monitors, (LPARAM)&work_area );
+-            spi_loaded[spi_idx] = TRUE;
+-        }
+-        CopyRect( pvParam, &work_area );
+-        TRACE("work area %s\n", wine_dbgstr_rect( &work_area ));
++        SetRect( (RECT *)pvParam, 0, 0,
++                    GetSystemMetrics( SM_CXSCREEN ),
++                    GetSystemMetrics( SM_CYSCREEN ) );
++        EnumDisplayMonitors( 0, NULL, enum_monitors, (LPARAM)pvParam );
++
++        TRACE("work area %s\n", wine_dbgstr_rect( (RECT *)pvParam ));
+         break;
+     }
+ 
+diff --git a/dlls/user32/user_private.h b/dlls/user32/user_private.h
+index 1ff6ef4..d0bb367 100644
+--- a/dlls/user32/user_private.h
++++ b/dlls/user32/user_private.h
+@@ -140,6 +140,7 @@ typedef struct tagUSER_DRIVER {
+     BOOL   (CDECL *pEnumDisplayMonitors)(HDC,LPRECT,MONITORENUMPROC,LPARAM);
+     BOOL   (CDECL *pEnumDisplaySettingsEx)(LPCWSTR,DWORD,LPDEVMODEW,DWORD);
+     BOOL   (CDECL *pGetMonitorInfo)(HMONITOR,MONITORINFO*);
++    void   (CDECL *pSetWorkArea)(RECT*);
+     /* windowing functions */
+     BOOL   (CDECL *pCreateDesktopWindow)(HWND);
+     BOOL   (CDECL *pCreateWindow)(HWND);
+diff --git a/dlls/winex11.drv/desktop.c b/dlls/winex11.drv/desktop.c
+index a2bc004..47a76c4 100644
+--- a/dlls/winex11.drv/desktop.c
++++ b/dlls/winex11.drv/desktop.c
+@@ -142,7 +142,7 @@ Window CDECL X11DRV_create_desktop( UINT width, UINT height )
+     wine_tsx11_lock();
+ 
+     /* Create window */
+-    win_attr.event_mask = ExposureMask | KeyPressMask | KeyReleaseMask |
++    win_attr.event_mask = ExposureMask | KeyPressMask | KeyReleaseMask | PropertyChangeMask |
+                           PointerMotionMask | ButtonPressMask | ButtonReleaseMask;
+     win_attr.cursor = XCreateFontCursor( display, XC_top_left_arrow );
+ 
+diff --git a/dlls/winex11.drv/event.c b/dlls/winex11.drv/event.c
+index 9a489cd..8071e86 100644
+--- a/dlls/winex11.drv/event.c
++++ b/dlls/winex11.drv/event.c
+@@ -974,6 +974,11 @@ static void X11DRV_PropertyNotify( HWND hwnd, XEvent *xev )
+     XPropertyEvent *event = &xev->xproperty;
+     struct x11drv_win_data *data;
+ 
++    if (event->atom == x11drv_atom(_NET_WORKAREA))
++    {
++        refresh_workarea( event->display, event->window );
++    }
++
+     if (!hwnd) return;
+     if (!(data = X11DRV_get_win_data( hwnd ))) return;
+ 
+diff --git a/dlls/winex11.drv/winex11.drv.spec b/dlls/winex11.drv/winex11.drv.spec
+index fdd32b3..670feb4 100644
+--- a/dlls/winex11.drv/winex11.drv.spec
++++ b/dlls/winex11.drv/winex11.drv.spec
+@@ -86,6 +86,7 @@
+ @ cdecl EnumDisplayMonitors(long ptr ptr long) X11DRV_EnumDisplayMonitors
+ @ cdecl EnumDisplaySettingsEx(ptr long ptr long) X11DRV_EnumDisplaySettingsEx
+ @ cdecl GetMonitorInfo(long ptr) X11DRV_GetMonitorInfo
++@ cdecl SetWorkArea(long ptr) X11DRV_SetWorkArea
+ @ cdecl AcquireClipboard(long) X11DRV_AcquireClipboard
+ @ cdecl CountClipboardFormats() X11DRV_CountClipboardFormats
+ @ cdecl CreateDesktopWindow(long) X11DRV_CreateDesktopWindow
+diff --git a/dlls/winex11.drv/x11drv.h b/dlls/winex11.drv/x11drv.h
+index 26671eb..f318b20 100644
+--- a/dlls/winex11.drv/x11drv.h
++++ b/dlls/winex11.drv/x11drv.h
+@@ -768,6 +768,7 @@ extern void X11DRV_expect_error( Display *display, x11drv_error_callback callbac
+ extern int X11DRV_check_error(void);
+ extern void X11DRV_X_to_window_rect( struct x11drv_win_data *data, RECT *rect );
+ extern void xinerama_init( unsigned int width, unsigned int height );
++extern void refresh_workarea( Display* display, Window window );
+ 
+ extern void X11DRV_init_desktop( Window win, unsigned int width, unsigned int height );
+ extern void X11DRV_resize_desktop(unsigned int width, unsigned int height);
+diff --git a/dlls/winex11.drv/x11drv_main.c b/dlls/winex11.drv/x11drv_main.c
+index 8299457..da544d6 100644
+--- a/dlls/winex11.drv/x11drv_main.c
++++ b/dlls/winex11.drv/x11drv_main.c
+@@ -654,6 +654,13 @@ struct x11drv_thread_data *x11drv_init_thread_data(void)
+ #endif
+ 
+     if (TRACE_ON(synchronous)) XSynchronize( data->display, True );
++
++    if (root_window && root_window != DefaultRootWindow(gdi_display))
++    {
++        XSelectInput( data->display, root_window, PropertyChangeMask );
++        refresh_workarea( data->display, root_window );
++    }
++    
+     wine_tsx11_unlock();
+ 
+     set_queue_display_fd( data->display );
+diff --git a/dlls/winex11.drv/xinerama.c b/dlls/winex11.drv/xinerama.c
+index 2a66df5..ae26faf 100644
+--- a/dlls/winex11.drv/xinerama.c
++++ b/dlls/winex11.drv/xinerama.c
+@@ -200,6 +200,25 @@ void xinerama_init( unsigned int width, unsigned int height )
+     ClipCursor( NULL );  /* reset the cursor clip rectangle */
+ }
+ 
++void refresh_workarea( Display* display, Window window )
++{
++    Atom type;
++    int format;
++    CARD32 *work_area;
++    unsigned long count, remaining;
++
++    if (!XGetWindowProperty( display, window, x11drv_atom(_NET_WORKAREA), 0,
++                             ~0, False, XA_CARDINAL, &type, &format, &count,
++                             &remaining, (unsigned char **)&work_area ))
++    {
++        if (type == XA_CARDINAL && format == 32 && count >= 4)
++        {
++            SetRect( &default_monitor.rcWork, work_area[0], work_area[1],
++                     work_area[0] + work_area[2], work_area[1] + work_area[3] );
++        }
++        XFree( work_area );
++    }
++}
+ 
+ /***********************************************************************
+  *		X11DRV_GetMonitorInfo  (X11DRV.@)
+@@ -260,3 +279,23 @@ BOOL CDECL X11DRV_EnumDisplayMonitors( HDC hdc, LPRECT rect, MONITORENUMPROC pro
+     }
+     return TRUE;
+ }
++
++/***********************************************************************
++ *		X11DRV_SetWorkArea  (X11DRV.@)
++ */
++void CDECL X11DRV_SetWorkArea( RECT *rc )
++{
++    CARD32 work_area[4];
++    Display *display = thread_init_display();
++
++    work_area[0] = rc->left;
++    work_area[1] = rc->top;
++    work_area[2] = rc->right - rc->left;
++    work_area[3] = rc->bottom - rc->top;
++
++    /* this only works by coincidence, but I'm too lazy to do it properly, since
++        this approach is wrong anyway */
++    XChangeProperty( display, root_window, x11drv_atom(_NET_WORKAREA),
++        XA_CARDINAL, 32, PropModeReplace, (unsigned char*)&work_area, 4);
++}
++
+-- 
+1.5.6.5
+

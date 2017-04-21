@@ -1,0 +1,31 @@
+From 829539fb37941dd347bd25f8ba8a4ed045b910b2 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Thu, 25 Sep 2008 13:27:10 -0500
+Subject: [PATCH] explorer: don't activate taskbar and related windows when showing them
+
+This ensures that when you run e.g. wine explorer /desktop=x notepad,
+notepad has the focus initially.
+---
+ programs/explorer/taskbar.c |    6 +++---
+ 1 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/programs/explorer/taskbar.c b/programs/explorer/taskbar.c
+index e5ee6be..9dde2ca 100644
+--- a/programs/explorer/taskbar.c
++++ b/programs/explorer/taskbar.c
+@@ -280,9 +280,9 @@ void initialize_taskbar(void)
+ 
+     taskbar_setpos();
+ 
+-    ShowWindow(systray_window, SW_SHOW);
+-    ShowWindow(startbutton, SW_SHOW);
+-    ShowWindow(taskbar_window, SW_SHOW);
++    ShowWindow(systray_window, SW_SHOWNA);
++    ShowWindow(startbutton, SW_SHOWNA);
++    ShowWindow(taskbar_window, SW_SHOWNA);
+ }
+ 
+ void finalize_taskbar(void)
+-- 
+1.5.6.5
+

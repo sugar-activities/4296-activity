@@ -1,0 +1,91 @@
+From b774f0524629c6653fadbe1d6dd97934d455d4a2 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Tue, 23 Sep 2008 16:59:33 -0500
+Subject: [PATCH] explorer: pack buttons based on text size
+
+---
+ programs/explorer/taskbar.c |   42 ++++++++++++++++++++++++++++++++----------
+ 1 files changed, 32 insertions(+), 10 deletions(-)
+
+diff --git a/programs/explorer/taskbar.c b/programs/explorer/taskbar.c
+index cae25a0..e5ee6be 100644
+--- a/programs/explorer/taskbar.c
++++ b/programs/explorer/taskbar.c
+@@ -26,8 +26,6 @@ WINE_DEFAULT_DEBUG_CHANNEL(explorer);
+ 
+ #define MSG_APPBAR WM_USER
+ 
+-#define TASKBAR_HEIGHT 25
+-
+ static HWND taskbar_window;
+ static HWND systray_window;
+ static HWND tasklist_window;
+@@ -36,9 +34,32 @@ static HWND startbutton;
+ static void taskbar_setpos(void)
+ {
+     APPBARDATA abd;
+-    RECT rc;
++    RECT rc, start_rc;
++    int height, startbutton_width;
++    LOGFONTA lf;
++    HFONT font, oldFont;
++    HDC hdc;
++
++    /* calculate size of start button */
++    ZeroMemory(&lf, sizeof(lf));
++    ZeroMemory(&start_rc, sizeof(start_rc));
++    lf.lfHeight = -12;
++    lf.lfWeight = FW_NORMAL;
++    lf.lfPitchAndFamily = DEFAULT_PITCH|FF_SWISS;
++    strcpy(lf.lfFaceName, "Arial");
++    font = CreateFontIndirectA(&lf);
++    
++    hdc = GetDC(startbutton);
+     
+-    /* TODO: Try to calculate the needed height */
++    oldFont = SelectObject(hdc, font);
++    DrawTextA(hdc, "Start", -1, &start_rc, DT_SINGLELINE|DT_CALCRECT);
++    SelectObject(hdc, oldFont);
++    
++    DeleteObject(font);
++    
++    ReleaseDC(startbutton, hdc);
++
++    height = 7 + max(GetSystemMetrics(SM_CYSMICON), start_rc.bottom);
+     
+     /* ask for an acceptable rect */
+     ZeroMemory(&abd, sizeof(abd));
+@@ -48,23 +69,24 @@ static void taskbar_setpos(void)
+     abd.rc.left = 0;
+     abd.rc.right = GetSystemMetrics(SM_CXSCREEN);
+     abd.rc.bottom = GetSystemMetrics(SM_CYSCREEN);
+-    abd.rc.top = abd.rc.bottom - TASKBAR_HEIGHT;
++    abd.rc.top = abd.rc.bottom - height;
+     SHAppBarMessage(ABM_QUERYPOS, &abd);
+     
+     /* actually reserve a rect that has the correct height if QUERYPOS moved the bottom */
+-    abd.rc.top = abd.rc.bottom - TASKBAR_HEIGHT;
++    abd.rc.top = abd.rc.bottom - height;
+     SHAppBarMessage(ABM_SETPOS, &abd);
+     
+     MoveWindow(taskbar_window, abd.rc.left, abd.rc.top, abd.rc.right-abd.rc.left, abd.rc.bottom-abd.rc.top, TRUE);
+     
+-    /* FIXME: reposition start menu */
+-    
+-    /* right-align the systray */
++    /* reposition subwindows */
+     GetWindowRect(systray_window, &rc);
+     
+     SetWindowPos(systray_window, HWND_TOP, abd.rc.right - abd.rc.left - (rc.right - rc.left), 1, 0, 0, SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
+     
+-    MoveWindow(tasklist_window, 76, 1, abd.rc.right - abd.rc.left - (rc.right - rc.left) - 80, 24, TRUE);
++    startbutton_width = 12 + start_rc.right + GetSystemMetrics(SM_CXSMICON);
++    MoveWindow(startbutton, 0, 1, startbutton_width, height-1, TRUE);
++    
++    MoveWindow(tasklist_window, startbutton_width+2, 1, abd.rc.right - abd.rc.left - (rc.right - rc.left) - (startbutton_width+2), height-1, TRUE);
+ }
+ 
+ static LRESULT WINAPI taskbar_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+-- 
+1.5.6.5
+

@@ -1,0 +1,60 @@
+From 3d7a624934e3402860856dbfdb63b81863ef17d4 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Thu, 16 Oct 2008 12:28:39 -0500
+Subject: [PATCH] explorer: respect the dpi setting in the taskbar
+
+---
+ programs/explorer/taskbar.c  |    8 ++++----
+ programs/explorer/tasklist.c |    2 +-
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/programs/explorer/taskbar.c b/programs/explorer/taskbar.c
+index 9dde2ca..040e774 100644
+--- a/programs/explorer/taskbar.c
++++ b/programs/explorer/taskbar.c
+@@ -40,17 +40,17 @@ static void taskbar_setpos(void)
+     HFONT font, oldFont;
+     HDC hdc;
+ 
++    hdc = GetDC(startbutton);
++    
+     /* calculate size of start button */
+     ZeroMemory(&lf, sizeof(lf));
+     ZeroMemory(&start_rc, sizeof(start_rc));
+-    lf.lfHeight = -12;
++    lf.lfHeight = -MulDiv(9, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+     lf.lfWeight = FW_NORMAL;
+     lf.lfPitchAndFamily = DEFAULT_PITCH|FF_SWISS;
+     strcpy(lf.lfFaceName, "Arial");
+     font = CreateFontIndirectA(&lf);
+     
+-    hdc = GetDC(startbutton);
+-    
+     oldFont = SelectObject(hdc, font);
+     DrawTextA(hdc, "Start", -1, &start_rc, DT_SINGLELINE|DT_CALCRECT);
+     SelectObject(hdc, oldFont);
+@@ -185,7 +185,7 @@ static LRESULT WINAPI taskbar_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM
+ 
+             /* draw caption */
+             ZeroMemory(&lf, sizeof(lf));
+-            lf.lfHeight = -12;
++            lf.lfHeight = -MulDiv(9, GetDeviceCaps(dis->hDC, LOGPIXELSY), 72);
+             lf.lfWeight = FW_NORMAL;
+             lf.lfPitchAndFamily = DEFAULT_PITCH|FF_SWISS;
+             strcpy(lf.lfFaceName, "Arial");
+diff --git a/programs/explorer/tasklist.c b/programs/explorer/tasklist.c
+index 26de448..a6432f0 100644
+--- a/programs/explorer/tasklist.c
++++ b/programs/explorer/tasklist.c
+@@ -382,7 +382,7 @@ static LRESULT WINAPI tasklist_wndproc(HWND hwnd, UINT msg, WPARAM wparam, LPARA
+             
+             /* draw caption */
+             ZeroMemory(&lf, sizeof(lf));
+-            lf.lfHeight = -12;
++            lf.lfHeight = -MulDiv(9, GetDeviceCaps(dis->hDC, LOGPIXELSY), 72);
+             lf.lfWeight = FW_NORMAL;
+             lf.lfPitchAndFamily = DEFAULT_PITCH|FF_SWISS;
+             strcpy(lf.lfFaceName, "Arial");
+-- 
+1.5.6.5
+

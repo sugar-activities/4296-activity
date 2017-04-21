@@ -1,0 +1,76 @@
+From 2439def66bbe51e3de78adca154fd4d6428e4a88 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Tue, 23 Sep 2008 16:23:04 -0500
+Subject: [PATCH] explorer: set the work area when appbars change
+
+---
+ programs/explorer/appbar.c |   39 +++++++++++++++++++++++++++++++++++++++
+ 1 files changed, 39 insertions(+), 0 deletions(-)
+
+diff --git a/programs/explorer/appbar.c b/programs/explorer/appbar.c
+index 2947ccd..f063ea2 100644
+--- a/programs/explorer/appbar.c
++++ b/programs/explorer/appbar.c
+@@ -124,6 +124,41 @@ static void appbar_cliprect(PAPPBARDATA abd)
+     }
+ }
+ 
++static void refresh_workarea(void)
++{
++    struct appbar_data* data;
++    RECT rc;
++
++    rc.left = 0;
++    rc.top = 0;
++    rc.right = GetSystemMetrics(SM_CXSCREEN);
++    rc.bottom = GetSystemMetrics(SM_CYSCREEN);
++
++    LIST_FOR_EACH_ENTRY(data, &appbars, struct appbar_data, entry)
++    {
++        if (data->space_reserved)
++        {
++            switch (data->edge)
++            {
++            case ABE_BOTTOM:
++                rc.bottom = min(rc.bottom, data->rc.top);
++                break;
++            case ABE_LEFT:
++                rc.left = max(rc.left, data->rc.right);
++                break;
++            case ABE_RIGHT:
++                rc.right = min(rc.right, data->rc.left);
++                break;
++            case ABE_TOP:
++                rc.top = max(rc.top, data->rc.bottom);
++                break;
++            }
++        }
++    }
++
++    SystemParametersInfoW(SPI_SETWORKAREA, 0, (void*)&rc, 0);
++}
++
+ static UINT_PTR handle_appbarmessage(DWORD msg, PAPPBARDATA abd)
+ {
+     struct appbar_data* data;
+@@ -157,6 +192,8 @@ static UINT_PTR handle_appbarmessage(DWORD msg, PAPPBARDATA abd)
+             send_poschanged(abd->hWnd);
+ 
+             HeapFree(GetProcessHeap(), 0, data);
++
++            refresh_workarea();
+         }
+         else
+             WINE_WARN("removing hwnd %p not on the list\n", abd->hWnd);
+@@ -184,6 +221,8 @@ static UINT_PTR handle_appbarmessage(DWORD msg, PAPPBARDATA abd)
+             data->edge = abd->uEdge;
+             data->rc = abd->rc;
+             data->space_reserved = TRUE;
++
++            refresh_workarea();
+         }
+         else
+         {
+-- 
+1.5.6.5
+

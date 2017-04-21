@@ -1,0 +1,49 @@
+From 9f44072ea096a2e8ba96511378d77715f6fbfcf4 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Thu, 2 Oct 2008 13:55:41 -0500
+Subject: [PATCH] winex11.drv: hack to allow changing the parent of virtual desktops
+
+---
+ dlls/winex11.drv/desktop.c |   11 +++++++++--
+ 1 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/dlls/winex11.drv/desktop.c b/dlls/winex11.drv/desktop.c
+index 47a76c4..092e7ff 100644
+--- a/dlls/winex11.drv/desktop.c
++++ b/dlls/winex11.drv/desktop.c
+@@ -21,6 +21,7 @@
+ #include "config.h"
+ #include <X11/cursorfont.h>
+ #include <X11/Xlib.h>
++#include <stdlib.h>
+ 
+ #include "x11drv.h"
+ 
+@@ -134,8 +135,9 @@ void X11DRV_init_desktop( Window win, unsigned int width, unsigned int height )
+ Window CDECL X11DRV_create_desktop( UINT width, UINT height )
+ {
+     XSetWindowAttributes win_attr;
+-    Window win;
++    Window win, parent;
+     Display *display = thread_init_display();
++    char* parent_str;
+ 
+     TRACE( "%u x %u\n", width, height );
+ 
+@@ -152,7 +154,12 @@ Window CDECL X11DRV_create_desktop( UINT width, UINT height )
+     else
+         win_attr.colormap = None;
+ 
+-    win = XCreateWindow( display, DefaultRootWindow(display),
++    if ((parent_str = getenv("WINE_DESKTOP_PARENT")))
++        parent = (Window)atol(parent_str);
++    else
++        parent = DefaultRootWindow(display);
++
++    win = XCreateWindow( display, parent,
+                          0, 0, width, height, 0, screen_depth, InputOutput, visual,
+                          CWEventMask | CWCursor | CWColormap, &win_attr );
+     if (win != None && width == screen_width && height == screen_height)
+-- 
+1.5.6.5
+

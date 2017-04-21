@@ -1,0 +1,135 @@
+From 26e1883dba089512da6463d10943a061185e6128 Mon Sep 17 00:00:00 2001
+From: Vincent Povirk <vincent@codeweavers.com>
+Date: Fri, 26 Sep 2008 14:53:51 -0500
+Subject: [PATCH] explorer: add "Exit" menu item
+
+---
+ programs/explorer/startmenu.c |   77 +++++++++++++++++++++++++++++++++++------
+ 1 files changed, 66 insertions(+), 11 deletions(-)
+
+diff --git a/programs/explorer/startmenu.c b/programs/explorer/startmenu.c
+index f2a0b28..fcf9935 100644
+--- a/programs/explorer/startmenu.c
++++ b/programs/explorer/startmenu.c
+@@ -26,6 +26,7 @@
+ #include <shlwapi.h>
+ #include <shobjidl.h>
+ #include "wine/debug.h"
++#include "wine/unicode.h"
+ #include "wine/list.h"
+ #include "explorer_private.h"
+ 
+@@ -37,6 +38,7 @@ struct menu_item
+     BOOL initialized;
+     LPWSTR displayname;
+     HICON icon;
++    void (*on_click)(); /* for items without a PIDL, execute this function */
+ 
+     /* parent information */
+     struct menu_item* parent; /* NULL for paths that don't have a parent menu */
+@@ -98,17 +100,24 @@ static void exec_item(struct menu_item* item)
+     LPITEMIDLIST abs_pidl;
+     SHELLEXECUTEINFOW sei;
+     
+-    abs_pidl = build_pidl(item);
+-    
+-    ZeroMemory(&sei, sizeof(sei));
+-    sei.cbSize = sizeof(sei);
+-    sei.fMask = SEE_MASK_IDLIST|SEE_MASK_NO_CONSOLE;
+-    sei.nShow = SW_SHOWNORMAL;
+-    sei.lpIDList = abs_pidl;
+-    
+-    ShellExecuteExW(&sei);
+-    
+-    CoTaskMemFree(abs_pidl);
++    if (item->on_click)
++    {
++        item->on_click();
++    }
++    else
++    {
++        abs_pidl = build_pidl(item);
++        
++        ZeroMemory(&sei, sizeof(sei));
++        sei.cbSize = sizeof(sei);
++        sei.fMask = SEE_MASK_IDLIST|SEE_MASK_NO_CONSOLE;
++        sei.nShow = SW_SHOWNORMAL;
++        sei.lpIDList = abs_pidl;
++        
++        ShellExecuteExW(&sei);
++        
++        CoTaskMemFree(abs_pidl);
++    }
+ }
+ 
+ static HICON extract_icon(IShellFolder* parent, LPCITEMIDLIST pidl, HWND hwnd)
+@@ -355,6 +364,41 @@ static struct menu_item* add_items(struct menu_item* parent, struct menu_item* u
+     return parent;
+ }
+ 
++/* add an item that executes a function intead of a PIDL */
++static struct menu_item* add_special_item(struct menu_item* parent, struct menu_item* user_parent, LPWSTR displayname, void (*on_click)(), HICON icon, HWND hwnd)
++{
++    struct menu_item* item;
++    MENUITEMINFOW mii;
++
++    item = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(struct menu_item));
++    item->displayname = displayname;
++    item->icon = icon;
++    item->parent = parent;
++    item->on_click = on_click;
++    
++    mii.cbSize = sizeof(mii);
++    mii.fMask = MIIM_STRING|MIIM_DATA;
++    mii.dwTypeData = item->displayname;
++    mii.dwItemData = (DWORD)item;
++    
++    if (item->icon)
++    {
++        mii.fMask |= MIIM_BITMAP;
++        mii.hbmpItem = HBMMENU_CALLBACK;
++    }
++    
++    InsertMenuItemW(parent?parent->menuhandle:topmenu, -1, TRUE, &mii);
++    
++    list_add_tail(&items, &item->entry);
++    
++    return item;
++}
++
++static void exit_windows()
++{
++    ExitWindows(0, 0);
++}
++
+ static void destroy_menus()
+ {
+     if (!topmenu)
+@@ -470,6 +514,8 @@ void do_startmenu(HWND hwnd, HWND button)
+     MENUINFO mi;
+     RECT rc={0,0,0,0};
+     TPMPARAMS tpm;
++    static WCHAR Exit[] = {'E','x','i','t',0};
++    LPWSTR exit_str;
+ 
+     /* FIXME: Our existing menu is never destroyed if the user makes no 
+         selection. It seems to be impossible to detect this situation. */
+@@ -507,6 +553,15 @@ void do_startmenu(HWND hwnd, HWND button)
+         add_item(NULL, NULL, pidl, hwnd);
+     }
+     
++    /* separator */
++    AppendMenuW(topmenu, MF_SEPARATOR, 0, NULL);
++    
++    /* since we'll be using LoadString for this, the "Exit" caption will be
++        heap-allocated; for now I just make a copy of the string */
++    exit_str = HeapAlloc(GetProcessHeap(), 0, sizeof(WCHAR) * (strlenW(Exit)+1));
++    strcpyW(exit_str, Exit);
++    add_special_item(NULL, NULL, exit_str, exit_windows, NULL, hwnd);
++    
+     mi.cbSize = sizeof(mi);
+     mi.fMask = MIM_STYLE;
+     mi.dwStyle = MNS_NOTIFYBYPOS|MNS_CHECKORBMP;
+-- 
+1.5.6.5
+
